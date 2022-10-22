@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::Read;
 use std::num::Wrapping;
 use std::{
@@ -113,6 +114,37 @@ impl Md5InputFile {
     }
 }
 
+struct Md5InputDirect {
+    position: usize,
+    contents: Vec<u8>,
+}
+
+impl Md5InputDirect {
+    pub fn new(contents: Vec<u8>) -> Self {
+        Md5InputDirect {
+            position: 0,
+            contents: contents.to_vec(),
+        }
+    }
+}
+
+impl Md5Input for Md5InputDirect {
+    fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize> {
+        if self.position == self.contents.len() {
+            return Ok(0);
+        }
+        let limit = min(self.position + CHUNK_SIZE_BYTES, self.contents.len());
+        let mut cursor = 0;
+        for byte in self.contents[self.position..limit].iter() {
+            buf[cursor] = *byte;
+            cursor += 1;
+        }
+        let copied = limit - self.position;
+        self.position = limit;
+        Ok(copied)
+    }
+}
+
 struct Md5ChunkProvider<T: Md5Input> {
     input: T,
     padding_state: PaddingState,
@@ -213,7 +245,7 @@ const fn aux_fun_i(x: u32, y: u32, z: u32) -> u32 {
     y ^ (x | !(z))
 }
 
-struct Md5Hash {
+pub struct Md5Hash {
     state: Md5HashComputeState,
 }
 
@@ -368,6 +400,17 @@ impl Md5Hash {
         }
     }
 
+    pub fn hash(data: Vec<u8>) -> Result<[u8; 16]> {
+        let input = Md5InputDirect::new(data);
+        let mut chunk_provider = Md5ChunkProvider::new(input);
+        let mut hasher = Md5Hash::new();
+        let mut buffer: [u8; CHUNK_SIZE_BYTES] = [0; CHUNK_SIZE_BYTES];
+        while let Some(_) = chunk_provider.read(&mut buffer)? {
+            hasher.add_chunk(buffer)?;
+        }
+        hasher.compute()
+    }
+
     pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) -> Result<()> {
         self.state = self.state.process_chunk(&chunk)?;
         Ok(())
@@ -434,41 +477,6 @@ mod test {
     use log::LevelFilter;
     use rstest::*;
     use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
-
-    struct Md5InputDirect {
-        position: usize,
-        contents: Vec<u8>,
-    }
-
-    impl Md5InputDirect {
-        pub fn new(contents: Vec<u8>) -> Self {
-            Md5InputDirect {
-                position: 0,
-                contents: contents.to_vec(),
-            }
-        }
-    }
-
-    impl Md5Input for Md5InputDirect {
-        fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize> {
-            if self.position == self.contents.len() {
-                return Ok(0);
-            }
-            let limit = if self.position + CHUNK_SIZE_BYTES > self.contents.len() {
-                self.contents.len()
-            } else {
-                self.position + CHUNK_SIZE_BYTES
-            };
-            let mut cursor = 0;
-            for byte in self.contents[self.position..limit].iter() {
-                buf[cursor] = *byte;
-                cursor += 1;
-            }
-            let copied = limit - self.position;
-            self.position = limit;
-            Ok(copied)
-        }
-    }
 
     #[allow(unused)]
     fn setup_logger() {
@@ -804,6 +812,29 @@ mod test {
         let mut instance = Md5Hash::new();
         instance.add_chunk(chunk).expect("Error adding chunk");
         let digest = Digest::from(instance.compute().expect("Error in compute"));
+        let result = format!("{:x}", digest);
+        assert_eq!(result, expected);
+    }
+
+    // Values taken from RFC section "A.5 Test suite"
+    // https://www.ietf.org/rfc/rfc1321.txt
+    #[rstest]
+    #[case("", "d41d8cd98f00b204e9800998ecf8427e")]
+    #[case("a", "0cc175b9c0f1b6a831c399e269772661")]
+    #[case("abc", "900150983cd24fb0d6963f7d28e17f72")]
+    #[case("message digest", "f96b697d7cb7938d525a2f31aaf161d0")]
+    #[case("abcdefghijklmnopqrstuvwxyz", "c3fcd3d76192e4007dfb496cca67e13b")]
+    #[case(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+        "d174ab98d277d9f5a5611c2c9f419d9f"
+    )]
+    #[case(
+        "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+        "57edf4a22be3c955ac49da2e2107b67a"
+    )]
+    fn test_hash(#[case] data: &str, #[case] expected: &str) {
+        let data = Vec::from(data.as_bytes());
+        let digest = Digest::from(Md5Hash::hash(data).expect("Error in hash"));
         let result = format!("{:x}", digest);
         assert_eq!(result, expected);
     }
