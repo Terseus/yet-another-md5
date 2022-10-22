@@ -1,11 +1,6 @@
 use std::cmp::min;
-use std::io::Read;
+use std::fmt::{Formatter, LowerHex};
 use std::num::Wrapping;
-use std::{
-    fmt::{Formatter, LowerHex},
-    fs::File,
-    path::PathBuf,
-};
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -55,10 +50,6 @@ impl LowerHex for Digest {
     }
 }
 
-pub trait HasherFile {
-    fn hash_file(&self, path: &PathBuf) -> Result<Digest>;
-}
-
 struct Bytes<'a>(&'a [u8]);
 
 impl<'a> std::fmt::LowerHex for Bytes<'a> {
@@ -96,22 +87,6 @@ enum PaddingState {
 
 trait Md5Input {
     fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize>;
-}
-
-struct Md5InputFile {
-    input: File,
-}
-
-impl Md5Input for Md5InputFile {
-    fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize> {
-        Ok(self.input.read(buf)?)
-    }
-}
-
-impl Md5InputFile {
-    pub fn new(input: File) -> Self {
-        Md5InputFile { input }
-    }
 }
 
 struct Md5InputDirect {
@@ -431,27 +406,6 @@ impl Md5Hash {
             buffer[i] = u8::try_from((0xff << (i * 8) & state_var) >> (i * 8))?;
         }
         Ok(buffer)
-    }
-}
-
-impl HasherFile for Md5HasherMine {
-    fn hash_file(&self, path: &PathBuf) -> Result<Digest> {
-        let target_file = File::open(path)
-            .with_context(|| anyhow!("Error opening target file '{}'", path.display()))?;
-        let mut buffer: [u8; CHUNK_SIZE_BYTES] = [0; CHUNK_SIZE_BYTES];
-        let mut chunk_provider = Md5ChunkProvider::new(Md5InputFile::new(target_file));
-        let mut md5_hash = Md5Hash::new();
-        loop {
-            match chunk_provider.read(&mut buffer)? {
-                Some(()) => {
-                    trace!("chunk: {}", format_chunk(&buffer));
-                    md5_hash.add_chunk(buffer)?;
-                }
-                None => break,
-            }
-        }
-        let target_md5 = md5_hash.compute()?;
-        Ok(Digest::from(target_md5))
     }
 }
 
