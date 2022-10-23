@@ -27,7 +27,9 @@ showoutput ?= 0
 # `cargo build` flags
 BUILD_FLAGS ?=
 # `cargo test` flags
-TEST_FLAGS ?=
+TEST_FLAGS ?= --color=always
+# flags for the `cargo test` generated binary
+TEST_BIN_FLAGS ?=
 
 
 ifeq ($(release),1)
@@ -35,7 +37,8 @@ ifeq ($(release),1)
 endif
 
 ifeq ($(showoutput),1)
-	TEST_FLAGS := $(TEST_FLAGS) --nocapture
+	TEST_BIN_FLAGS := $(TEST_BIN_FLAGS) --nocapture
+	TEST_FLAGS := $(TEST_FLAGS)
 endif
 
 
@@ -47,7 +50,7 @@ build:
 # Run the tests
 .PHONY: test
 test:
-	cargo test -- $(TEST_FLAGS)
+	cargo test $(TEST_FLAGS) -- $(TEST_BIN_FLAGS)
 
 # Clean all artifacts
 .PHONY: clean
@@ -59,3 +62,4 @@ clean:
 debug:
 	@echo "BUILD_FLAGS=$(BUILD_FLAGS)"
 	@echo "TEST_FLAGS=$(TEST_FLAGS)"
+	@echo "TEST_BIN_FLAGS=$(TEST_BIN_FLAGS)"
