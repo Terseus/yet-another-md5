@@ -1,6 +1,5 @@
 use std::cmp::min;
-use std::fmt::Formatter;
-use std::fmt::LowerHex;
+use std::fmt::Display;
 use std::num::Wrapping;
 
 use anyhow::anyhow;
@@ -33,33 +32,40 @@ const SINE_TABLE: [u32; 64] = [
 ];
 
 #[derive(Debug)]
-pub struct Digest {
-    hash: Vec<u8>,
+pub struct Hash {
+    value: [u8; 16],
 }
 
-impl From<[u8; 16]> for Digest {
-    fn from(arr: [u8; 16]) -> Digest {
-        let hash = Vec::from(arr);
-        Digest { hash }
+impl From<[u8; 16]> for Hash {
+    fn from(value: [u8; 16]) -> Hash {
+        Hash { value }
     }
 }
 
-impl LowerHex for Digest {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        for value in self.hash.iter() {
+impl Display for Hash {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        for value in self.value.iter() {
             write!(formatter, "{:02x}", value)?
         }
         Ok(())
     }
 }
 
-struct Bytes<'a>(&'a [u8]);
+// FIXME: Remove `pub`
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Chunk([u8; CHUNK_SIZE_BYTES]);
 
-impl<'a> std::fmt::LowerHex for Bytes<'a> {
+impl From<[u8; CHUNK_SIZE_BYTES]> for Chunk {
+    fn from(value: [u8; CHUNK_SIZE_BYTES]) -> Self {
+        Chunk(value)
+    }
+}
+
+impl Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         for (index, byte) in self.0.iter().enumerate() {
-            std::fmt::LowerHex::fmt(byte, f)?;
+            write!(f, "{:0>2x}", byte)?;
             if index + 1 < self.0.len() {
                 write!(f, ", ")?;
             }
@@ -69,8 +75,10 @@ impl<'a> std::fmt::LowerHex for Bytes<'a> {
     }
 }
 
-fn format_chunk(chunk: &[u8]) -> String {
-    format!("{:0>2x}", Bytes(&chunk))
+impl Chunk {
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 pub struct Md5HasherMine {}
@@ -88,7 +96,6 @@ enum PaddingState {
     Done,
 }
 
-type Chunk = [u8; CHUNK_SIZE_BYTES];
 type Block = [u32; BLOCK_SIZE_WORDS];
 
 trait Md5Input {
@@ -114,10 +121,10 @@ impl Md5Input for Md5InputDirect {
         if self.position == self.contents.len() {
             return Ok(0);
         }
-        let limit = min(self.position + buf.len(), self.contents.len());
+        let limit = min(self.position + buf.0.len(), self.contents.len());
         let mut cursor = 0;
         for byte in self.contents[self.position..limit].iter() {
-            buf[cursor] = *byte;
+            buf.0[cursor] = *byte;
             cursor += 1;
         }
         let copied = limit - self.position;
@@ -150,11 +157,11 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
             trace!(
                 "chunk[{:?}]({:?}) = length[{:?}]({:?})",
                 chunk_position,
-                chunk[chunk_position],
+                chunk.0[chunk_position],
                 length_position,
                 length[length_position]
             );
-            chunk[chunk_position] = length[length_position];
+            chunk.0[chunk_position] = length[length_position];
         }
         Ok(())
     }
@@ -170,14 +177,14 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
                 self.size += u64::try_from(bytes_read * 8)?;
                 debug!("bytes_read: {}", bytes_read);
                 debug!("size: {:?}", self.size);
-                trace!("buffer: {}", format_chunk(buffer));
+                trace!("buffer: {}", buffer);
                 if bytes_read == 0 {
                     debug!("empty chunk readed");
                     debug!("current padding state: {:?}", self.padding_state);
-                    buffer.fill(0);
+                    buffer.0.fill(0);
                     match &self.padding_state {
                         PaddingState::InitialBit => {
-                            buffer[0] = INITIAL_BIT;
+                            buffer.0[0] = INITIAL_BIT;
                             self.write_length(buffer)?;
                             self.padding_state = PaddingState::Done;
                         }
@@ -189,18 +196,18 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
                             return Ok(None);
                         }
                     }
-                    trace!("chunk with padding: {}", format_chunk(buffer));
+                    trace!("chunk with padding: {}", buffer);
                     return Ok(Some(()));
                 }
                 if bytes_read < buffer.len() {
                     debug!("last chunk readed");
-                    buffer[bytes_read] = INITIAL_BIT;
-                    buffer[bytes_read + 1..].fill(0);
+                    buffer.0[bytes_read] = INITIAL_BIT;
+                    buffer.0[bytes_read + 1..].fill(0);
                     self.padding_state = PaddingState::Length;
                     if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES - 1 {
                         debug!("chunk can hold padding");
                         self.write_length(buffer)?;
-                        trace!("buffer with padding: {}", format_chunk(buffer));
+                        trace!("buffer with padding: {}", buffer);
                         self.padding_state = PaddingState::Done;
                     }
                 }
@@ -238,7 +245,7 @@ struct Md5HashComputeState {
     d: u32,
 }
 
-impl std::fmt::LowerHex for Md5HashComputeState {
+impl Display for Md5HashComputeState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -358,12 +365,12 @@ impl Md5HashComputeState {
     pub fn process_chunk(self, chunk: &Chunk) -> Result<Self> {
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for index in 0..16 {
-            block[index] = u8_to_u32(&chunk[(index * 4)..((index * 4) + 4)].try_into()?)?;
+            block[index] = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?)?;
         }
         let mut result = self;
         for step in 1..65 {
             result = result.advance_step(&block, step);
-            trace!("State at step {:0>2}: {:x}", step, result);
+            trace!("State at step {:0>2}: {}", step, result);
         }
         Ok(Md5HashComputeState {
             a: (Wrapping(self.a) + Wrapping(result.a)).0,
@@ -385,7 +392,7 @@ impl Md5Hash {
         let input = Md5InputDirect::new(data);
         let mut chunk_provider = Md5ChunkProvider::new(input);
         let mut hasher = Md5Hash::new();
-        let mut buffer: Chunk = [0; CHUNK_SIZE_BYTES];
+        let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
         while let Some(_) = chunk_provider.read(&mut buffer)? {
             hasher.add_chunk(buffer)?;
         }
@@ -450,17 +457,17 @@ mod test {
 
     #[rstest]
     fn test_md5_input_direct_32_bytes() {
-        let initial_value: Vec<u8> = (1..33).collect::<Vec<u8>>();
+        let mut initial_value: Vec<u8> = (1..33).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value.clone());
-        let buffer: &mut Chunk = &mut [0; CHUNK_SIZE_BYTES];
-        let mut expected = initial_value.clone();
-        expected.extend([0; 32].iter());
-        let readed = instance.read(buffer).unwrap();
+        let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
+        initial_value.extend([0; 32].iter());
+        let expected: [u8; CHUNK_SIZE_BYTES] = initial_value.try_into().expect("Wrong Vec size");
+        let readed = instance.read(&mut buffer).unwrap();
 
         assert_eq!(readed, 32);
-        assert_eq!(buffer, &expected.as_slice());
+        assert_eq!(buffer, Chunk(expected));
 
-        let readed = instance.read(buffer).unwrap();
+        let readed = instance.read(&mut buffer).unwrap();
         assert_eq!(readed, 0);
     }
 
@@ -468,7 +475,7 @@ mod test {
     fn test_md5_input_direct_72_bytes() {
         let initial_value: Vec<u8> = (1..73).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value.clone());
-        let buffer: &mut Chunk = &mut [0; CHUNK_SIZE_BYTES];
+        let buffer = &mut Chunk([0; CHUNK_SIZE_BYTES]);
         let expected = initial_value[0..CHUNK_SIZE_BYTES]
             .iter()
             .map(|&x| x)
@@ -476,7 +483,7 @@ mod test {
         let readed = instance.read(buffer).unwrap();
 
         assert_eq!(readed, CHUNK_SIZE_BYTES);
-        assert_eq!(buffer, &expected.as_slice());
+        assert_eq!(buffer.0, expected.as_slice());
 
         let mut expected = initial_value[CHUNK_SIZE_BYTES..]
             .iter()
@@ -485,7 +492,7 @@ mod test {
         expected.extend([0; CHUNK_SIZE_BYTES - 8].iter());
         let readed = instance.read(buffer).unwrap();
         assert_eq!(readed, 8);
-        assert_eq!(buffer[..8], expected.as_slice()[..8]);
+        assert_eq!(buffer.0[..8], expected.as_slice()[..8]);
 
         let readed = instance.read(buffer).unwrap();
         assert_eq!(readed, 0);
@@ -495,7 +502,7 @@ mod test {
     fn test_md5_input_leftover() {
         let initial_value: Vec<u8> = (0..8).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value);
-        let buffer: &mut Chunk = &mut [0xff; CHUNK_SIZE_BYTES];
+        let buffer = &mut Chunk([0xff; CHUNK_SIZE_BYTES]);
         #[rustfmt::skip]
         let expected = vec![
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -510,7 +517,7 @@ mod test {
         let readed = instance.read(buffer).unwrap();
 
         assert_eq!(readed, 8);
-        assert_eq!(buffer, &expected.as_slice());
+        assert_eq!(buffer.0, expected.as_slice());
     }
 
     #[rstest]
@@ -537,7 +544,7 @@ mod test {
     #[case(
         vec![],
         vec![
-            [
+            Chunk([
                 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -546,13 +553,13 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     #[case(
         vec![0x61],
         vec![
-            [
+            Chunk([
                 0x61, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -561,13 +568,13 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     #[case(
         vec![0x61, 0x62, 0x63],
         vec![
-            [
+            Chunk([
                 0x61, 0x62, 0x63, 0x80, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -576,7 +583,7 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     #[case(
@@ -585,7 +592,7 @@ mod test {
             0x64, 0x69, 0x67, 0x65, 0x73, 0x74,
         ],
         vec![
-            [
+            Chunk([
                 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x20,
                 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x80, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -594,7 +601,7 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     #[case(
@@ -609,7 +616,7 @@ mod test {
             0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
         ],
         vec![
-            [
+            Chunk([
                 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
                 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
                 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
@@ -618,8 +625,8 @@ mod test {
                 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
                 0x77, 0x78, 0x79, 0x7A, 0x30, 0x31, 0x32, 0x33,
                 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x80, 0x00,
-            ],
-            [
+            ]),
+            Chunk([
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -628,7 +635,7 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0xf0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     #[case(
@@ -645,7 +652,7 @@ mod test {
             0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30,
         ],
         vec![
-            [
+            Chunk([
                 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
                 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
                 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34,
@@ -654,8 +661,8 @@ mod test {
                 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
                 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
                 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34,
-            ],
-            [
+            ]),
+            Chunk([
                 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32,
                 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30,
                 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -664,13 +671,13 @@ mod test {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x80, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ]
+            ])
         ]
     )]
     fn test_padding(#[case] contents: Vec<u8>, #[case] expected: Vec<Chunk>) {
         let input = Md5InputDirect::new(contents);
         let mut result: Vec<Chunk> = vec![];
-        let mut buffer: Chunk = [0; CHUNK_SIZE_BYTES];
+        let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
         let mut chunk_provider = Md5ChunkProvider::new(input);
         while let Some(_) = chunk_provider.read(&mut buffer).unwrap() {
             result.push(buffer.clone());
@@ -718,7 +725,7 @@ mod test {
 
     #[rstest]
     #[case(
-        [
+        Chunk([
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -727,7 +734,7 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ],
+        ]),
         Md5HashComputeState {a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
     fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: Md5HashComputeState) {
@@ -740,7 +747,7 @@ mod test {
 
     #[rstest]
     #[case(
-        [
+        Chunk([
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -749,11 +756,11 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ],
+        ]),
         "d41d8cd98f00b204e9800998ecf8427e"
     )]
     #[case(
-        [
+        Chunk([
             0x61, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -762,14 +769,14 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ],
+        ]),
         "0cc175b9c0f1b6a831c399e269772661"
     )]
     fn test_compute_single_chunk(#[case] chunk: Chunk, #[case] expected: &str) {
         let mut instance = Md5Hash::new();
         instance.add_chunk(chunk).expect("Error adding chunk");
-        let digest = Digest::from(instance.compute().expect("Error in compute"));
-        let result = format!("{:x}", digest);
+        let digest = Hash::from(instance.compute().expect("Error in compute"));
+        let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
 
@@ -791,8 +798,8 @@ mod test {
     )]
     fn test_hash(#[case] data: &str, #[case] expected: &str) {
         let data = Vec::from(data.as_bytes());
-        let digest = Digest::from(Md5Hash::hash(data).expect("Error in hash"));
-        let result = format!("{:x}", digest);
+        let digest = Hash::from(Md5Hash::hash(data).expect("Error in hash"));
+        let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
 }
