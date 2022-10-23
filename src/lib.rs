@@ -1,11 +1,13 @@
 use std::cmp::min;
-use std::fmt::{Formatter, LowerHex};
+use std::fmt::Formatter;
+use std::fmt::LowerHex;
 use std::num::Wrapping;
 
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
-use log::{debug, trace};
+use log::debug;
+use log::trace;
 
 const CHUNK_SIZE_BYTES: usize = 64; // 512 / 8
 const INITIAL_BIT_SIZE_BYTES: usize = 1;
