@@ -111,7 +111,7 @@ impl Md5InputDirect {
     pub fn new(contents: Vec<u8>) -> Self {
         Md5InputDirect {
             position: 0,
-            contents: contents.to_vec(),
+            contents,
         }
     }
 }
