@@ -10,6 +10,7 @@ use log::debug;
 use log::trace;
 
 const CHUNK_SIZE_BYTES: usize = 64; // 512 / 8
+const BLOCK_SIZE_WORDS: usize = CHUNK_SIZE_BYTES / 4;
 const INITIAL_BIT_SIZE_BYTES: usize = 1;
 const INITIAL_BIT: u8 = 0x80; // 1 in big endian.
 const LENGTH_SIZE_BYTES: usize = 8; // 64 / 8
@@ -87,8 +88,11 @@ enum PaddingState {
     Done,
 }
 
+type Chunk = [u8; CHUNK_SIZE_BYTES];
+type Block = [u32; BLOCK_SIZE_WORDS];
+
 trait Md5Input {
-    fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize>;
+    fn read(&mut self, buf: &mut Chunk) -> Result<usize>;
 }
 
 struct Md5InputDirect {
@@ -106,11 +110,11 @@ impl Md5InputDirect {
 }
 
 impl Md5Input for Md5InputDirect {
-    fn read(&mut self, buf: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<usize> {
+    fn read(&mut self, buf: &mut Chunk) -> Result<usize> {
         if self.position == self.contents.len() {
             return Ok(0);
         }
-        let limit = min(self.position + CHUNK_SIZE_BYTES, self.contents.len());
+        let limit = min(self.position + buf.len(), self.contents.len());
         let mut cursor = 0;
         for byte in self.contents[self.position..limit].iter() {
             buf[cursor] = *byte;
@@ -137,7 +141,7 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
         }
     }
 
-    fn write_length(&self, chunk: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<()> {
+    fn write_length(&self, chunk: &mut Chunk) -> Result<()> {
         let mut length: [u8; 8] = [0; 8];
         u64_to_u8(&(self.size & u64::MAX), &mut length)?;
         for x in 0..8 {
@@ -155,7 +159,7 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
         Ok(())
     }
 
-    fn read(&mut self, buffer: &mut [u8; CHUNK_SIZE_BYTES]) -> Result<Option<()>> {
+    fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>> {
         match self.input.read(buffer) {
             Err(error) => return Err(anyhow!(error)),
             Ok(bytes_read) => {
@@ -188,7 +192,7 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
                     trace!("chunk with padding: {}", format_chunk(buffer));
                     return Ok(Some(()));
                 }
-                if bytes_read < CHUNK_SIZE_BYTES {
+                if bytes_read < buffer.len() {
                     debug!("last chunk readed");
                     buffer[bytes_read] = INITIAL_BIT;
                     buffer[bytes_read + 1..].fill(0);
@@ -246,13 +250,13 @@ impl std::fmt::LowerHex for Md5HashComputeState {
 }
 
 macro_rules! Md5Op {
-    ($self:ident, $words:ident, $aux_fun:ident, $a:ident, $b:ident, $c:ident, $d:ident, $k:expr, $s:expr, $i:expr) => {
+    ($self:ident, $block:ident, $aux_fun:ident, $a:ident, $b:ident, $c:ident, $d:ident, $k:expr, $s:expr, $i:expr) => {
         Md5HashComputeState {
             $a: {
                 (Wrapping(
                     (Wrapping($self.$a)
                         + Wrapping($aux_fun($self.$b, $self.$c, $self.$d))
-                        + Wrapping($words[$k])
+                        + Wrapping($block[$k])
                         + Wrapping(SINE_TABLE[$i]))
                     .0
                     .rotate_left($s),
@@ -277,88 +281,88 @@ impl Md5HashComputeState {
         }
     }
 
-    pub fn advance_step(self, words: &[u32; CHUNK_SIZE_BYTES / 4], step: u8) -> Self {
+    pub fn advance_step(self, block: &Block, step: u8) -> Self {
         match step {
             // Round 1
-            1 => Md5Op!(self, words, aux_fun_f, a, b, c, d, 0, 7, 0), // [ABCD  0  7  1]
-            2 => Md5Op!(self, words, aux_fun_f, d, a, b, c, 1, 12, 1), // [DABC  1 12  2]
-            3 => Md5Op!(self, words, aux_fun_f, c, d, a, b, 2, 17, 2), // [CDAB  2 17  3]
-            4 => Md5Op!(self, words, aux_fun_f, b, c, d, a, 3, 22, 3), // [BCDA  3 22  4]
-            5 => Md5Op!(self, words, aux_fun_f, a, b, c, d, 4, 7, 4), // [ABCD  4  7  5]
-            6 => Md5Op!(self, words, aux_fun_f, d, a, b, c, 5, 12, 5), // [DABC  5 12  6]
-            7 => Md5Op!(self, words, aux_fun_f, c, d, a, b, 6, 17, 6), // [CDAB  6 17  7]
-            8 => Md5Op!(self, words, aux_fun_f, b, c, d, a, 7, 22, 7), // [BCDA  7 22  8]
-            9 => Md5Op!(self, words, aux_fun_f, a, b, c, d, 8, 7, 8), // [ABCD  8  7  9]
-            10 => Md5Op!(self, words, aux_fun_f, d, a, b, c, 9, 12, 9), // [DABC  9 12 10]
-            11 => Md5Op!(self, words, aux_fun_f, c, d, a, b, 10, 17, 10), // [CDAB 10 17 11]
-            12 => Md5Op!(self, words, aux_fun_f, b, c, d, a, 11, 22, 11), // [BCDA 11 22 12]
-            13 => Md5Op!(self, words, aux_fun_f, a, b, c, d, 12, 7, 12), // [ABCD 12  7 13]
-            14 => Md5Op!(self, words, aux_fun_f, d, a, b, c, 13, 12, 13), // [DABC 13 12 14]
-            15 => Md5Op!(self, words, aux_fun_f, c, d, a, b, 14, 17, 14), // [CDAB 14 17 15]
-            16 => Md5Op!(self, words, aux_fun_f, b, c, d, a, 15, 22, 15), // [BCDA 15 22 16]
+            1 => Md5Op!(self, block, aux_fun_f, a, b, c, d, 0, 7, 0), // [ABCD  0  7  1]
+            2 => Md5Op!(self, block, aux_fun_f, d, a, b, c, 1, 12, 1), // [DABC  1 12  2]
+            3 => Md5Op!(self, block, aux_fun_f, c, d, a, b, 2, 17, 2), // [CDAB  2 17  3]
+            4 => Md5Op!(self, block, aux_fun_f, b, c, d, a, 3, 22, 3), // [BCDA  3 22  4]
+            5 => Md5Op!(self, block, aux_fun_f, a, b, c, d, 4, 7, 4), // [ABCD  4  7  5]
+            6 => Md5Op!(self, block, aux_fun_f, d, a, b, c, 5, 12, 5), // [DABC  5 12  6]
+            7 => Md5Op!(self, block, aux_fun_f, c, d, a, b, 6, 17, 6), // [CDAB  6 17  7]
+            8 => Md5Op!(self, block, aux_fun_f, b, c, d, a, 7, 22, 7), // [BCDA  7 22  8]
+            9 => Md5Op!(self, block, aux_fun_f, a, b, c, d, 8, 7, 8), // [ABCD  8  7  9]
+            10 => Md5Op!(self, block, aux_fun_f, d, a, b, c, 9, 12, 9), // [DABC  9 12 10]
+            11 => Md5Op!(self, block, aux_fun_f, c, d, a, b, 10, 17, 10), // [CDAB 10 17 11]
+            12 => Md5Op!(self, block, aux_fun_f, b, c, d, a, 11, 22, 11), // [BCDA 11 22 12]
+            13 => Md5Op!(self, block, aux_fun_f, a, b, c, d, 12, 7, 12), // [ABCD 12  7 13]
+            14 => Md5Op!(self, block, aux_fun_f, d, a, b, c, 13, 12, 13), // [DABC 13 12 14]
+            15 => Md5Op!(self, block, aux_fun_f, c, d, a, b, 14, 17, 14), // [CDAB 14 17 15]
+            16 => Md5Op!(self, block, aux_fun_f, b, c, d, a, 15, 22, 15), // [BCDA 15 22 16]
             // Round 2
-            17 => Md5Op!(self, words, aux_fun_g, a, b, c, d, 1, 5, 16), // [ABCD  1  5 17]
-            18 => Md5Op!(self, words, aux_fun_g, d, a, b, c, 6, 9, 17), // [DABC  6  9 18]
-            19 => Md5Op!(self, words, aux_fun_g, c, d, a, b, 11, 14, 18), // [CDAB 11 14 19]
-            20 => Md5Op!(self, words, aux_fun_g, b, c, d, a, 0, 20, 19), // [BCDA  0 20 20]
-            21 => Md5Op!(self, words, aux_fun_g, a, b, c, d, 5, 5, 20), // [ABCD  5  5 21]
-            22 => Md5Op!(self, words, aux_fun_g, d, a, b, c, 10, 9, 21), // [DABC 10  9 22]
-            23 => Md5Op!(self, words, aux_fun_g, c, d, a, b, 15, 14, 22), // [CDAB 15 14 23]
-            24 => Md5Op!(self, words, aux_fun_g, b, c, d, a, 4, 20, 23), // [BCDA  4 20 24]
-            25 => Md5Op!(self, words, aux_fun_g, a, b, c, d, 9, 5, 24), // [ABCD  9  5 25]
-            26 => Md5Op!(self, words, aux_fun_g, d, a, b, c, 14, 9, 25), // [DABC 14  9 26]
-            27 => Md5Op!(self, words, aux_fun_g, c, d, a, b, 3, 14, 26), // [CDAB  3 14 27]
-            28 => Md5Op!(self, words, aux_fun_g, b, c, d, a, 8, 20, 27), // [BCDA  8 20 28]
-            29 => Md5Op!(self, words, aux_fun_g, a, b, c, d, 13, 5, 28), // [ABCD 13  5 29]
-            30 => Md5Op!(self, words, aux_fun_g, d, a, b, c, 2, 9, 29), // [DABC  2  9 30]
-            31 => Md5Op!(self, words, aux_fun_g, c, d, a, b, 7, 14, 30), // [CDAB  7 14 31]
-            32 => Md5Op!(self, words, aux_fun_g, b, c, d, a, 12, 20, 31), // [BCDA 12 20 32]
+            17 => Md5Op!(self, block, aux_fun_g, a, b, c, d, 1, 5, 16), // [ABCD  1  5 17]
+            18 => Md5Op!(self, block, aux_fun_g, d, a, b, c, 6, 9, 17), // [DABC  6  9 18]
+            19 => Md5Op!(self, block, aux_fun_g, c, d, a, b, 11, 14, 18), // [CDAB 11 14 19]
+            20 => Md5Op!(self, block, aux_fun_g, b, c, d, a, 0, 20, 19), // [BCDA  0 20 20]
+            21 => Md5Op!(self, block, aux_fun_g, a, b, c, d, 5, 5, 20), // [ABCD  5  5 21]
+            22 => Md5Op!(self, block, aux_fun_g, d, a, b, c, 10, 9, 21), // [DABC 10  9 22]
+            23 => Md5Op!(self, block, aux_fun_g, c, d, a, b, 15, 14, 22), // [CDAB 15 14 23]
+            24 => Md5Op!(self, block, aux_fun_g, b, c, d, a, 4, 20, 23), // [BCDA  4 20 24]
+            25 => Md5Op!(self, block, aux_fun_g, a, b, c, d, 9, 5, 24), // [ABCD  9  5 25]
+            26 => Md5Op!(self, block, aux_fun_g, d, a, b, c, 14, 9, 25), // [DABC 14  9 26]
+            27 => Md5Op!(self, block, aux_fun_g, c, d, a, b, 3, 14, 26), // [CDAB  3 14 27]
+            28 => Md5Op!(self, block, aux_fun_g, b, c, d, a, 8, 20, 27), // [BCDA  8 20 28]
+            29 => Md5Op!(self, block, aux_fun_g, a, b, c, d, 13, 5, 28), // [ABCD 13  5 29]
+            30 => Md5Op!(self, block, aux_fun_g, d, a, b, c, 2, 9, 29), // [DABC  2  9 30]
+            31 => Md5Op!(self, block, aux_fun_g, c, d, a, b, 7, 14, 30), // [CDAB  7 14 31]
+            32 => Md5Op!(self, block, aux_fun_g, b, c, d, a, 12, 20, 31), // [BCDA 12 20 32]
             // Round 3
-            33 => Md5Op!(self, words, aux_fun_h, a, b, c, d, 5, 4, 32), // [ABCD  5  4 33]
-            34 => Md5Op!(self, words, aux_fun_h, d, a, b, c, 8, 11, 33), // [DABC  8 11 34]
-            35 => Md5Op!(self, words, aux_fun_h, c, d, a, b, 11, 16, 34), // [CDAB 11 16 35]
-            36 => Md5Op!(self, words, aux_fun_h, b, c, d, a, 14, 23, 35), // [BCDA 14 23 36]
-            37 => Md5Op!(self, words, aux_fun_h, a, b, c, d, 1, 4, 36), // [ABCD  1  4 37]
-            38 => Md5Op!(self, words, aux_fun_h, d, a, b, c, 4, 11, 37), // [DABC  4 11 38]
-            39 => Md5Op!(self, words, aux_fun_h, c, d, a, b, 7, 16, 38), // [CDAB  7 16 39]
-            40 => Md5Op!(self, words, aux_fun_h, b, c, d, a, 10, 23, 39), // [BCDA 10 23 40]
-            41 => Md5Op!(self, words, aux_fun_h, a, b, c, d, 13, 4, 40), // [ABCD 13  4 41]
-            42 => Md5Op!(self, words, aux_fun_h, d, a, b, c, 0, 11, 41), // [DABC  0 11 42]
-            43 => Md5Op!(self, words, aux_fun_h, c, d, a, b, 3, 16, 42), // [CDAB  3 16 43]
-            44 => Md5Op!(self, words, aux_fun_h, b, c, d, a, 6, 23, 43), // [BCDA  6 23 44]
-            45 => Md5Op!(self, words, aux_fun_h, a, b, c, d, 9, 4, 44), // [ABCD  9  4 45]
-            46 => Md5Op!(self, words, aux_fun_h, d, a, b, c, 12, 11, 45), // [DABC 12 11 46]
-            47 => Md5Op!(self, words, aux_fun_h, c, d, a, b, 15, 16, 46), // [CDAB 15 16 47]
-            48 => Md5Op!(self, words, aux_fun_h, b, c, d, a, 2, 23, 47), // [BCDA  2 23 48]
+            33 => Md5Op!(self, block, aux_fun_h, a, b, c, d, 5, 4, 32), // [ABCD  5  4 33]
+            34 => Md5Op!(self, block, aux_fun_h, d, a, b, c, 8, 11, 33), // [DABC  8 11 34]
+            35 => Md5Op!(self, block, aux_fun_h, c, d, a, b, 11, 16, 34), // [CDAB 11 16 35]
+            36 => Md5Op!(self, block, aux_fun_h, b, c, d, a, 14, 23, 35), // [BCDA 14 23 36]
+            37 => Md5Op!(self, block, aux_fun_h, a, b, c, d, 1, 4, 36), // [ABCD  1  4 37]
+            38 => Md5Op!(self, block, aux_fun_h, d, a, b, c, 4, 11, 37), // [DABC  4 11 38]
+            39 => Md5Op!(self, block, aux_fun_h, c, d, a, b, 7, 16, 38), // [CDAB  7 16 39]
+            40 => Md5Op!(self, block, aux_fun_h, b, c, d, a, 10, 23, 39), // [BCDA 10 23 40]
+            41 => Md5Op!(self, block, aux_fun_h, a, b, c, d, 13, 4, 40), // [ABCD 13  4 41]
+            42 => Md5Op!(self, block, aux_fun_h, d, a, b, c, 0, 11, 41), // [DABC  0 11 42]
+            43 => Md5Op!(self, block, aux_fun_h, c, d, a, b, 3, 16, 42), // [CDAB  3 16 43]
+            44 => Md5Op!(self, block, aux_fun_h, b, c, d, a, 6, 23, 43), // [BCDA  6 23 44]
+            45 => Md5Op!(self, block, aux_fun_h, a, b, c, d, 9, 4, 44), // [ABCD  9  4 45]
+            46 => Md5Op!(self, block, aux_fun_h, d, a, b, c, 12, 11, 45), // [DABC 12 11 46]
+            47 => Md5Op!(self, block, aux_fun_h, c, d, a, b, 15, 16, 46), // [CDAB 15 16 47]
+            48 => Md5Op!(self, block, aux_fun_h, b, c, d, a, 2, 23, 47), // [BCDA  2 23 48]
             // Round 4
-            49 => Md5Op!(self, words, aux_fun_i, a, b, c, d, 0, 6, 48), // [ABCD  0  6 49]
-            50 => Md5Op!(self, words, aux_fun_i, d, a, b, c, 7, 10, 49), // [DABC  7 10 50]
-            51 => Md5Op!(self, words, aux_fun_i, c, d, a, b, 14, 15, 50), // [CDAB 14 15 51]
-            52 => Md5Op!(self, words, aux_fun_i, b, c, d, a, 5, 21, 51), // [BCDA  5 21 52]
-            53 => Md5Op!(self, words, aux_fun_i, a, b, c, d, 12, 6, 52), // [ABCD 12  6 53]
-            54 => Md5Op!(self, words, aux_fun_i, d, a, b, c, 3, 10, 53), // [DABC  3 10 54]
-            55 => Md5Op!(self, words, aux_fun_i, c, d, a, b, 10, 15, 54), // [CDAB 10 15 55]
-            56 => Md5Op!(self, words, aux_fun_i, b, c, d, a, 1, 21, 55), // [BCDA  1 21 56]
-            57 => Md5Op!(self, words, aux_fun_i, a, b, c, d, 8, 6, 56), // [ABCD  8  6 57]
-            58 => Md5Op!(self, words, aux_fun_i, d, a, b, c, 15, 10, 57), // [DABC 15 10 58]
-            59 => Md5Op!(self, words, aux_fun_i, c, d, a, b, 6, 15, 58), // [CDAB  6 15 59]
-            60 => Md5Op!(self, words, aux_fun_i, b, c, d, a, 13, 21, 59), // [BCDA 13 21 60]
-            61 => Md5Op!(self, words, aux_fun_i, a, b, c, d, 4, 6, 60), // [ABCD  4  6 61]
-            62 => Md5Op!(self, words, aux_fun_i, d, a, b, c, 11, 10, 61), // [DABC 11 10 62]
-            63 => Md5Op!(self, words, aux_fun_i, c, d, a, b, 2, 15, 62), // [CDAB  2 15 63]
-            64 => Md5Op!(self, words, aux_fun_i, b, c, d, a, 9, 21, 63), // [BCDA  9 21 64]
+            49 => Md5Op!(self, block, aux_fun_i, a, b, c, d, 0, 6, 48), // [ABCD  0  6 49]
+            50 => Md5Op!(self, block, aux_fun_i, d, a, b, c, 7, 10, 49), // [DABC  7 10 50]
+            51 => Md5Op!(self, block, aux_fun_i, c, d, a, b, 14, 15, 50), // [CDAB 14 15 51]
+            52 => Md5Op!(self, block, aux_fun_i, b, c, d, a, 5, 21, 51), // [BCDA  5 21 52]
+            53 => Md5Op!(self, block, aux_fun_i, a, b, c, d, 12, 6, 52), // [ABCD 12  6 53]
+            54 => Md5Op!(self, block, aux_fun_i, d, a, b, c, 3, 10, 53), // [DABC  3 10 54]
+            55 => Md5Op!(self, block, aux_fun_i, c, d, a, b, 10, 15, 54), // [CDAB 10 15 55]
+            56 => Md5Op!(self, block, aux_fun_i, b, c, d, a, 1, 21, 55), // [BCDA  1 21 56]
+            57 => Md5Op!(self, block, aux_fun_i, a, b, c, d, 8, 6, 56), // [ABCD  8  6 57]
+            58 => Md5Op!(self, block, aux_fun_i, d, a, b, c, 15, 10, 57), // [DABC 15 10 58]
+            59 => Md5Op!(self, block, aux_fun_i, c, d, a, b, 6, 15, 58), // [CDAB  6 15 59]
+            60 => Md5Op!(self, block, aux_fun_i, b, c, d, a, 13, 21, 59), // [BCDA 13 21 60]
+            61 => Md5Op!(self, block, aux_fun_i, a, b, c, d, 4, 6, 60), // [ABCD  4  6 61]
+            62 => Md5Op!(self, block, aux_fun_i, d, a, b, c, 11, 10, 61), // [DABC 11 10 62]
+            63 => Md5Op!(self, block, aux_fun_i, c, d, a, b, 2, 15, 62), // [CDAB  2 15 63]
+            64 => Md5Op!(self, block, aux_fun_i, b, c, d, a, 9, 21, 63), // [BCDA  9 21 64]
             _ => unreachable!(),
         }
     }
 
-    pub fn process_chunk(self, chunk: &[u8; CHUNK_SIZE_BYTES]) -> Result<Self> {
-        let mut words: [u32; CHUNK_SIZE_BYTES / 4] = [0; CHUNK_SIZE_BYTES / 4];
+    pub fn process_chunk(self, chunk: &Chunk) -> Result<Self> {
+        let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for index in 0..16 {
-            words[index] = u8_to_u32(&chunk[(index * 4)..((index * 4) + 4)].try_into()?)?;
+            block[index] = u8_to_u32(&chunk[(index * 4)..((index * 4) + 4)].try_into()?)?;
         }
         let mut result = self;
         for step in 1..65 {
-            result = result.advance_step(&words, step);
+            result = result.advance_step(&block, step);
             trace!("State at step {:0>2}: {:x}", step, result);
         }
         Ok(Md5HashComputeState {
@@ -381,14 +385,14 @@ impl Md5Hash {
         let input = Md5InputDirect::new(data);
         let mut chunk_provider = Md5ChunkProvider::new(input);
         let mut hasher = Md5Hash::new();
-        let mut buffer: [u8; CHUNK_SIZE_BYTES] = [0; CHUNK_SIZE_BYTES];
+        let mut buffer: Chunk = [0; CHUNK_SIZE_BYTES];
         while let Some(_) = chunk_provider.read(&mut buffer)? {
             hasher.add_chunk(buffer)?;
         }
         hasher.compute()
     }
 
-    pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) -> Result<()> {
+    pub fn add_chunk(&mut self, chunk: Chunk) -> Result<()> {
         self.state = self.state.process_chunk(&chunk)?;
         Ok(())
     }
@@ -448,7 +452,7 @@ mod test {
     fn test_md5_input_direct_32_bytes() {
         let initial_value: Vec<u8> = (1..33).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value.clone());
-        let buffer: &mut [u8; CHUNK_SIZE_BYTES] = &mut [0; CHUNK_SIZE_BYTES];
+        let buffer: &mut Chunk = &mut [0; CHUNK_SIZE_BYTES];
         let mut expected = initial_value.clone();
         expected.extend([0; 32].iter());
         let readed = instance.read(buffer).unwrap();
@@ -464,7 +468,7 @@ mod test {
     fn test_md5_input_direct_72_bytes() {
         let initial_value: Vec<u8> = (1..73).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value.clone());
-        let buffer: &mut [u8; CHUNK_SIZE_BYTES] = &mut [0; CHUNK_SIZE_BYTES];
+        let buffer: &mut Chunk = &mut [0; CHUNK_SIZE_BYTES];
         let expected = initial_value[0..CHUNK_SIZE_BYTES]
             .iter()
             .map(|&x| x)
@@ -491,7 +495,7 @@ mod test {
     fn test_md5_input_leftover() {
         let initial_value: Vec<u8> = (0..8).collect::<Vec<u8>>();
         let mut instance = Md5InputDirect::new(initial_value);
-        let buffer: &mut [u8; CHUNK_SIZE_BYTES] = &mut [0xff; CHUNK_SIZE_BYTES];
+        let buffer: &mut Chunk = &mut [0xff; CHUNK_SIZE_BYTES];
         #[rustfmt::skip]
         let expected = vec![
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -663,10 +667,10 @@ mod test {
             ]
         ]
     )]
-    fn test_padding(#[case] contents: Vec<u8>, #[case] expected: Vec<[u8; CHUNK_SIZE_BYTES]>) {
+    fn test_padding(#[case] contents: Vec<u8>, #[case] expected: Vec<Chunk>) {
         let input = Md5InputDirect::new(contents);
-        let mut result: Vec<[u8; CHUNK_SIZE_BYTES]> = vec![];
-        let mut buffer: [u8; CHUNK_SIZE_BYTES] = [0; CHUNK_SIZE_BYTES];
+        let mut result: Vec<Chunk> = vec![];
+        let mut buffer: Chunk = [0; CHUNK_SIZE_BYTES];
         let mut chunk_provider = Md5ChunkProvider::new(input);
         while let Some(_) = chunk_provider.read(&mut buffer).unwrap() {
             result.push(buffer.clone());
@@ -700,14 +704,14 @@ mod test {
         #[case] expected: Md5HashComputeState,
     ) {
         #[rustfmt::skip]
-        let chunk: [u32; CHUNK_SIZE_BYTES / 4] = [
+        let block: [u32; BLOCK_SIZE_WORDS] = [
             0x00000080, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000,
         ];
         let mut instance = Md5HashComputeState::new_initial();
         for x in 1..(steps + 1) {
-            instance = instance.advance_step(&chunk, x);
+            instance = instance.advance_step(&block, x);
         }
         assert_eq!(instance, expected);
     }
@@ -726,10 +730,7 @@ mod test {
         ],
         Md5HashComputeState {a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
-    fn test_process_chunk(
-        #[case] chunk: [u8; CHUNK_SIZE_BYTES],
-        #[case] expected: Md5HashComputeState,
-    ) {
+    fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: Md5HashComputeState) {
         let mut instance = Md5HashComputeState::new_initial();
         instance = instance
             .process_chunk(&chunk)
@@ -764,7 +765,7 @@ mod test {
         ],
         "0cc175b9c0f1b6a831c399e269772661"
     )]
-    fn test_compute_single_chunk(#[case] chunk: [u8; CHUNK_SIZE_BYTES], #[case] expected: &str) {
+    fn test_compute_single_chunk(#[case] chunk: Chunk, #[case] expected: &str) {
         let mut instance = Md5Hash::new();
         instance.add_chunk(chunk).expect("Error adding chunk");
         let digest = Digest::from(instance.compute().expect("Error in compute"));
