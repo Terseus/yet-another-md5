@@ -204,7 +204,7 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
                     buffer.0[bytes_read] = INITIAL_BIT;
                     buffer.0[bytes_read + 1..].fill(0);
                     self.padding_state = PaddingState::Length;
-                    if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES - 1 {
+                    if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES {
                         debug!("chunk can hold padding");
                         self.write_length(buffer)?;
                         trace!("buffer with padding: {}", buffer);
@@ -795,6 +795,10 @@ mod test {
     #[case(
         "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
         "57edf4a22be3c955ac49da2e2107b67a"
+    )]
+    #[case(
+        "1234567890123456789012345678901234567890123456789012345",
+        "c9ccf168914a1bcfc3229f1948e67da0"
     )]
     fn test_hash(#[case] data: &str, #[case] expected: &str) {
         let data = Vec::from(data.as_bytes());
