@@ -52,7 +52,7 @@ impl Display for Hash {
 }
 
 // FIXME: Remove `pub`
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Chunk([u8; CHUNK_SIZE_BYTES]);
 
 impl From<[u8; CHUNK_SIZE_BYTES]> for Chunk {
@@ -79,13 +79,13 @@ impl Chunk {
     pub const fn len(&self) -> usize {
         self.0.len()
     }
-}
 
-pub struct Md5HasherMine {}
-
-impl Md5HasherMine {
-    pub fn new() -> Self {
-        Md5HasherMine {}
+    // FIXME: What should this `is_empty` do?
+    // a) return false, it's never empty
+    // b) check if everything is zero
+    // c) ??? a good semantic operation for chunks?
+    pub fn is_empty(&self) -> bool {
+        false
     }
 }
 
@@ -122,10 +122,8 @@ impl Md5Input for Md5InputDirect {
             return Ok(0);
         }
         let limit = min(self.position + buf.0.len(), self.contents.len());
-        let mut cursor = 0;
-        for byte in self.contents[self.position..limit].iter() {
+        for (cursor, byte) in self.contents[self.position..limit].iter().enumerate() {
             buf.0[cursor] = *byte;
-            cursor += 1;
         }
         let copied = limit - self.position;
         self.position = limit;
@@ -168,7 +166,7 @@ impl<T: Md5Input> Md5ChunkProvider<T> {
 
     fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>> {
         match self.input.read(buffer) {
-            Err(error) => return Err(anyhow!(error)),
+            Err(error) => Err(anyhow!(error)),
             Ok(bytes_read) => {
                 if bytes_read == 0 && self.padding_state == PaddingState::Done {
                     return Ok(None);
@@ -364,8 +362,8 @@ impl Md5HashComputeState {
 
     pub fn process_chunk(self, chunk: &Chunk) -> Result<Self> {
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
-        for index in 0..16 {
-            block[index] = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?)?;
+        for (index, item) in block.iter_mut().enumerate() {
+            *item = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?)?;
         }
         let mut result = self;
         for step in 1..65 {
@@ -381,6 +379,12 @@ impl Md5HashComputeState {
     }
 }
 
+impl Default for Md5Hash {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Md5Hash {
     pub fn new() -> Self {
         Md5Hash {
@@ -393,7 +397,7 @@ impl Md5Hash {
         let mut chunk_provider = Md5ChunkProvider::new(input);
         let mut hasher = Md5Hash::new();
         let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
-        while let Some(_) = chunk_provider.read(&mut buffer)? {
+        while (chunk_provider.read(&mut buffer)?).is_some() {
             hasher.add_chunk(buffer)?;
         }
         hasher.compute()
@@ -415,25 +419,26 @@ impl Md5Hash {
 
     fn state_var_to_u8(&self, state_var: &u32) -> Result<[u8; 4]> {
         let mut buffer: [u8; 4] = [0; 4];
-        for i in 0..4 {
-            buffer[i] = u8::try_from((0xff << (i * 8) & state_var) >> (i * 8))?;
+        for (index, item) in buffer.iter_mut().enumerate().take(4) {
+            *item = u8::try_from((0xff << (index * 8) & state_var) >> (index * 8))?;
         }
         Ok(buffer)
     }
 }
 
 fn u64_to_u8(source: &u64, buffer: &mut [u8; 8]) -> Result<()> {
-    for i in 0..8 {
-        buffer[i] = u8::try_from((0xff << (i * 8) & source) >> (i * 8))
-            .with_context(|| anyhow!("Error transforming byte {:?} in source {:?}", i, source))?;
+    for (index, item) in buffer.iter_mut().enumerate().take(8) {
+        *item = u8::try_from((0xff << (index * 8) & source) >> (index * 8)).with_context(|| {
+            anyhow!("Error transforming byte {:?} in source {:?}", index, source)
+        })?;
     }
     Ok(())
 }
 
 fn u8_to_u32(source: &[u8; 4]) -> Result<u32> {
     let mut result = 0u32;
-    for i in 0..4 {
-        result |= (source[i] as u32) << (i * 8);
+    for (index, item) in source.iter().enumerate().take(4) {
+        result |= (*item as u32) << (index * 8);
     }
     Ok(result)
 }
