@@ -131,15 +131,15 @@ impl Md5Input for Md5InputDirect {
     }
 }
 
-struct Md5ChunkProvider<T: Md5Input> {
+struct ChunkProvider<T: Md5Input> {
     input: T,
     padding_state: PaddingState,
     size: u64,
 }
 
-impl<T: Md5Input> Md5ChunkProvider<T> {
+impl<T: Md5Input> ChunkProvider<T> {
     pub fn new(input: T) -> Self {
-        Md5ChunkProvider {
+        ChunkProvider {
             input,
             padding_state: PaddingState::InitialBit,
             size: 0,
@@ -231,23 +231,23 @@ const fn aux_fun_i(x: u32, y: u32, z: u32) -> u32 {
     y ^ (x | !(z))
 }
 
-pub struct Md5Hash {
-    state: Md5HashComputeState,
+pub struct Md5Hasher {
+    state: HashComputeState,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct Md5HashComputeState {
+struct HashComputeState {
     a: u32,
     b: u32,
     c: u32,
     d: u32,
 }
 
-impl Display for Md5HashComputeState {
+impl Display for HashComputeState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Md5HashComputeState {{ a: {:0>8x}, b: {:0>8x}, c: {:0>8x}, d: {:0>8x} }}",
+            "HashComputeState {{ a: {:0>8x}, b: {:0>8x}, c: {:0>8x}, d: {:0>8x} }}",
             self.a, self.b, self.c, self.d
         )?;
         Ok(())
@@ -256,7 +256,7 @@ impl Display for Md5HashComputeState {
 
 macro_rules! Md5Op {
     ($self:ident, $block:ident, $aux_fun:ident, $a:ident, $b:ident, $c:ident, $d:ident, $k:expr, $s:expr, $i:expr) => {
-        Md5HashComputeState {
+        HashComputeState {
             $a: {
                 (Wrapping(
                     (Wrapping($self.$a)
@@ -276,9 +276,9 @@ macro_rules! Md5Op {
 }
 
 // TODO: Try a struct to be used as mutable, benchmark it and see the difference.
-impl Md5HashComputeState {
+impl HashComputeState {
     pub fn new_initial() -> Self {
-        Md5HashComputeState {
+        HashComputeState {
             a: INITIAL_WORD_A,
             b: INITIAL_WORD_B,
             c: INITIAL_WORD_C,
@@ -370,7 +370,7 @@ impl Md5HashComputeState {
             result = result.advance_step(&block, step);
             trace!("State at step {:0>2}: {}", step, result);
         }
-        Ok(Md5HashComputeState {
+        Ok(HashComputeState {
             a: (Wrapping(self.a) + Wrapping(result.a)).0,
             b: (Wrapping(self.b) + Wrapping(result.b)).0,
             c: (Wrapping(self.c) + Wrapping(result.c)).0,
@@ -379,23 +379,23 @@ impl Md5HashComputeState {
     }
 }
 
-impl Default for Md5Hash {
+impl Default for Md5Hasher {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Md5Hash {
+impl Md5Hasher {
     pub fn new() -> Self {
-        Md5Hash {
-            state: Md5HashComputeState::new_initial(),
+        Md5Hasher {
+            state: HashComputeState::new_initial(),
         }
     }
 
     pub fn hash(data: Vec<u8>) -> Result<[u8; 16]> {
         let input = Md5InputDirect::new(data);
-        let mut chunk_provider = Md5ChunkProvider::new(input);
-        let mut hasher = Md5Hash::new();
+        let mut chunk_provider = ChunkProvider::new(input);
+        let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
         while (chunk_provider.read(&mut buffer)?).is_some() {
             hasher.add_chunk(buffer)?;
@@ -683,7 +683,7 @@ mod test {
         let input = Md5InputDirect::new(contents);
         let mut result: Vec<Chunk> = vec![];
         let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
-        let mut chunk_provider = Md5ChunkProvider::new(input);
+        let mut chunk_provider = ChunkProvider::new(input);
         while let Some(_) = chunk_provider.read(&mut buffer).unwrap() {
             result.push(buffer.clone());
         }
@@ -692,28 +692,28 @@ mod test {
 
     // Example values taken from https://rosettacode.org/wiki/MD5/Implementation_Debug
     #[rstest]
-    #[case(1, Md5HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0x98badcfe, d: 0x10325476})]
-    #[case(2, Md5HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0x98badcfe, d: 0xf59592dd})]
-    #[case(3, Md5HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0xe7f06b23, d: 0xf59592dd})]
-    #[case(4, Md5HashComputeState {a: 0xa5202774, b: 0x1b163203, c: 0xe7f06b23, d: 0xf59592dd})]
-    #[case(5, Md5HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xe7f06b23, d: 0xf59592dd})]
-    #[case(6, Md5HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xe7f06b23, d: 0x2f35d494})]
-    #[case(7, Md5HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xf5b158db, d: 0x2f35d494})]
-    #[case(8, Md5HashComputeState {a: 0x32033344, b: 0x9bc13ce9, c: 0xf5b158db, d: 0x2f35d494})]
-    #[case(9, Md5HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xf5b158db, d: 0x2f35d494})]
-    #[case(10, Md5HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xf5b158db, d: 0xfce4a312})]
-    #[case(11, Md5HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xe1ef0576, d: 0xfce4a312})]
-    #[case(12, Md5HashComputeState {a: 0x3893b991, b: 0x70768a29, c: 0xe1ef0576, d: 0xfce4a312})]
-    #[case(13, Md5HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0xe1ef0576, d: 0xfce4a312})]
-    #[case(14, Md5HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0xe1ef0576, d: 0x374943a7})]
-    #[case(15, Md5HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0x5aa53f75, d: 0x374943a7})]
-    #[case(16, Md5HashComputeState {a: 0xf56c7cf1, b: 0xd6819c6a, c: 0x5aa53f75, d: 0x374943a7})]
-    #[case(20, Md5HashComputeState {a: 0x1c7d7513, b: 0xbd782e17, c: 0xc095f13a, d: 0x7bd57a3a})]
-    #[case(24, Md5HashComputeState {a: 0x3d1e3e6c, b: 0xe422531a, c: 0xeb41643e, d: 0x68b7b3e3})]
-    #[case(64, Md5HashComputeState {a: 0x7246fad3, b: 0x14e45506, c: 0xff4ea3eb, d: 0x6e10a476})]
+    #[case(1, HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0x98badcfe, d: 0x10325476})]
+    #[case(2, HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0x98badcfe, d: 0xf59592dd})]
+    #[case(3, HashComputeState {a: 0xa5202774, b: 0xefcdab89, c: 0xe7f06b23, d: 0xf59592dd})]
+    #[case(4, HashComputeState {a: 0xa5202774, b: 0x1b163203, c: 0xe7f06b23, d: 0xf59592dd})]
+    #[case(5, HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xe7f06b23, d: 0xf59592dd})]
+    #[case(6, HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xe7f06b23, d: 0x2f35d494})]
+    #[case(7, HashComputeState {a: 0x32033344, b: 0x1b163203, c: 0xf5b158db, d: 0x2f35d494})]
+    #[case(8, HashComputeState {a: 0x32033344, b: 0x9bc13ce9, c: 0xf5b158db, d: 0x2f35d494})]
+    #[case(9, HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xf5b158db, d: 0x2f35d494})]
+    #[case(10, HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xf5b158db, d: 0xfce4a312})]
+    #[case(11, HashComputeState {a: 0x3893b991, b: 0x9bc13ce9, c: 0xe1ef0576, d: 0xfce4a312})]
+    #[case(12, HashComputeState {a: 0x3893b991, b: 0x70768a29, c: 0xe1ef0576, d: 0xfce4a312})]
+    #[case(13, HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0xe1ef0576, d: 0xfce4a312})]
+    #[case(14, HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0xe1ef0576, d: 0x374943a7})]
+    #[case(15, HashComputeState {a: 0xf56c7cf1, b: 0x70768a29, c: 0x5aa53f75, d: 0x374943a7})]
+    #[case(16, HashComputeState {a: 0xf56c7cf1, b: 0xd6819c6a, c: 0x5aa53f75, d: 0x374943a7})]
+    #[case(20, HashComputeState {a: 0x1c7d7513, b: 0xbd782e17, c: 0xc095f13a, d: 0x7bd57a3a})]
+    #[case(24, HashComputeState {a: 0x3d1e3e6c, b: 0xe422531a, c: 0xeb41643e, d: 0x68b7b3e3})]
+    #[case(64, HashComputeState {a: 0x7246fad3, b: 0x14e45506, c: 0xff4ea3eb, d: 0x6e10a476})]
     fn test_compute_state_advance_empty_string(
         #[case] steps: u8,
-        #[case] expected: Md5HashComputeState,
+        #[case] expected: HashComputeState,
     ) {
         #[rustfmt::skip]
         let block: [u32; BLOCK_SIZE_WORDS] = [
@@ -721,7 +721,7 @@ mod test {
             0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000,
         ];
-        let mut instance = Md5HashComputeState::new_initial();
+        let mut instance = HashComputeState::new_initial();
         for x in 1..(steps + 1) {
             instance = instance.advance_step(&block, x);
         }
@@ -740,10 +740,10 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ]),
-        Md5HashComputeState {a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
+        HashComputeState {a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
-    fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: Md5HashComputeState) {
-        let mut instance = Md5HashComputeState::new_initial();
+    fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: HashComputeState) {
+        let mut instance = HashComputeState::new_initial();
         instance = instance
             .process_chunk(&chunk)
             .expect("Error processing chunk");
@@ -778,7 +778,7 @@ mod test {
         "0cc175b9c0f1b6a831c399e269772661"
     )]
     fn test_compute_single_chunk(#[case] chunk: Chunk, #[case] expected: &str) {
-        let mut instance = Md5Hash::new();
+        let mut instance = Md5Hasher::new();
         instance.add_chunk(chunk).expect("Error adding chunk");
         let digest = Hash::from(instance.compute().expect("Error in compute"));
         let result = format!("{}", digest);
@@ -807,7 +807,7 @@ mod test {
     )]
     fn test_hash(#[case] data: &str, #[case] expected: &str) {
         let data = Vec::from(data.as_bytes());
-        let digest = Hash::from(Md5Hash::hash(data).expect("Error in hash"));
+        let digest = Hash::from(Md5Hasher::hash(data).expect("Error in hash"));
         let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
