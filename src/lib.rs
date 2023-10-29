@@ -107,7 +107,7 @@ impl<'a> ChunkProvider<'a> {
         }
     }
 
-    fn write_length(&self, chunk: &mut Chunk) -> Result<()> {
+    fn write_length(&self, chunk: &mut Chunk) {
         let mut length: [u8; 8] = [0; 8];
         u64_to_u8(&(self.size & u64::MAX), &mut length);
         for x in 0..8 {
@@ -122,7 +122,6 @@ impl<'a> ChunkProvider<'a> {
             );
             chunk.0[chunk_position] = length[length_position];
         }
-        Ok(())
     }
 
     fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>> {
@@ -144,11 +143,11 @@ impl<'a> ChunkProvider<'a> {
                     match &self.padding_state {
                         PaddingState::InitialBit => {
                             buffer.0[0] = INITIAL_BIT;
-                            self.write_length(buffer)?;
+                            self.write_length(buffer);
                             self.padding_state = PaddingState::Done;
                         }
                         PaddingState::Length => {
-                            self.write_length(buffer)?;
+                            self.write_length(buffer);
                             self.padding_state = PaddingState::Done;
                         }
                         PaddingState::Done => {
@@ -165,7 +164,7 @@ impl<'a> ChunkProvider<'a> {
                     self.padding_state = PaddingState::Length;
                     if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES {
                         debug!("chunk can hold padding");
-                        self.write_length(buffer)?;
+                        self.write_length(buffer);
                         trace!("buffer with padding: {}", buffer);
                         self.padding_state = PaddingState::Done;
                     }
@@ -325,7 +324,7 @@ impl HashComputeState {
             let unpacked: [u8; 4] = match chunk.0[(index * 4)..((index * 4) + 4)].try_into() {
                 Ok(value) => value,
                 Err(_) => panic!(
-                    "Error extracting word at position {:?} in chunk {:?}",
+                    "process_chunk: error extracting word; position={:?}, chunk={:?}",
                     index, chunk
                 ),
             };
@@ -366,41 +365,48 @@ impl Md5Hasher {
         while (chunk_provider.read(&mut buffer)?).is_some() {
             hasher.add_raw_chunk(buffer);
         }
-        hasher.compute()
+        Ok(hasher.compute())
     }
 
     pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) {
         self.add_raw_chunk(Chunk::from(chunk))
     }
 
-    pub fn compute(&self) -> Result<[u8; 16]> {
+    pub fn compute(&self) -> [u8; 16] {
         let mut buffer: [u8; 16] = [0; 16];
-        buffer[0..4].copy_from_slice(&self.state_var_to_u8(&self.state.a)?);
-        buffer[4..8].copy_from_slice(&self.state_var_to_u8(&self.state.b)?);
-        buffer[8..12].copy_from_slice(&self.state_var_to_u8(&self.state.c)?);
-        buffer[12..16].copy_from_slice(&self.state_var_to_u8(&self.state.d)?);
-        Ok(buffer)
+        buffer[0..4].copy_from_slice(&self.state_var_to_u8(&self.state.a));
+        buffer[4..8].copy_from_slice(&self.state_var_to_u8(&self.state.b));
+        buffer[8..12].copy_from_slice(&self.state_var_to_u8(&self.state.c));
+        buffer[12..16].copy_from_slice(&self.state_var_to_u8(&self.state.d));
+        buffer
     }
 
     fn add_raw_chunk(&mut self, chunk: Chunk) {
         self.state = self.state.process_chunk(&chunk);
     }
 
-    fn state_var_to_u8(&self, state_var: &u32) -> Result<[u8; 4]> {
+    fn state_var_to_u8(&self, state_var: &u32) -> [u8; 4] {
         let mut buffer: [u8; 4] = [0; 4];
         for (index, item) in buffer.iter_mut().enumerate().take(4) {
-            *item = u8::try_from((0xff << (index * 8) & state_var) >> (index * 8))?;
+            *item = extract_u8(&index, &(*state_var as u64));
         }
-        Ok(buffer)
+        buffer
+    }
+}
+
+fn extract_u8(index: &usize, value: &u64) -> u8 {
+    match u8::try_from((0xff << (index * 8) & value) >> (index * 8)) {
+        Ok(value) => value,
+        Err(_) => panic!(
+            "Error extracting u8 from u64; index={:?}, u64={:?}",
+            index, value
+        ),
     }
 }
 
 fn u64_to_u8(source: &u64, buffer: &mut [u8; 8]) {
     for (index, item) in buffer.iter_mut().enumerate().take(8) {
-        *item = match u8::try_from((0xff << (index * 8) & source) >> (index * 8)) {
-            Ok(value) => value,
-            Err(_) => panic!("Error transforming byte {:?} in source {:?}", index, source),
-        };
+        *item = extract_u8(&index, source);
     }
 }
 
@@ -682,7 +688,7 @@ mod test {
     fn test_compute_single_chunk(#[case] chunk: [u8; CHUNK_SIZE_BYTES], #[case] expected: &str) {
         let mut instance = Md5Hasher::new();
         instance.add_chunk(chunk);
-        let digest = Hash::from(instance.compute().expect("Error in compute"));
+        let digest = Hash::from(instance.compute());
         let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
