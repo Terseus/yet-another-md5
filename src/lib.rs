@@ -357,7 +357,7 @@ impl Md5Hasher {
         }
     }
 
-    pub fn hash(data: Vec<u8>) -> Result<[u8; 16]> {
+    pub fn hash(data: Vec<u8>) -> Result<Hash> {
         let mut cursor = Cursor::new(data);
         let mut chunk_provider = ChunkProvider::new(&mut cursor);
         let mut hasher = Md5Hasher::new();
@@ -372,13 +372,13 @@ impl Md5Hasher {
         self.add_raw_chunk(Chunk::from(chunk))
     }
 
-    pub fn compute(&self) -> [u8; 16] {
+    pub fn compute(&self) -> Hash {
         let mut buffer: [u8; 16] = [0; 16];
         buffer[0..4].copy_from_slice(&self.state_var_to_u8(&self.state.a));
         buffer[4..8].copy_from_slice(&self.state_var_to_u8(&self.state.b));
         buffer[8..12].copy_from_slice(&self.state_var_to_u8(&self.state.c));
         buffer[12..16].copy_from_slice(&self.state_var_to_u8(&self.state.d));
-        buffer
+        Hash::from(buffer)
     }
 
     fn add_raw_chunk(&mut self, chunk: Chunk) {
@@ -688,7 +688,7 @@ mod test {
     fn test_compute_single_chunk(#[case] chunk: [u8; CHUNK_SIZE_BYTES], #[case] expected: &str) {
         let mut instance = Md5Hasher::new();
         instance.add_chunk(chunk);
-        let digest = Hash::from(instance.compute());
+        let digest = instance.compute();
         let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
@@ -715,7 +715,7 @@ mod test {
     )]
     fn test_hash(#[case] data: &str, #[case] expected: &str) {
         let data = Vec::from(data.as_bytes());
-        let digest = Hash::from(Md5Hasher::hash(data).expect("Error in hash"));
+        let digest = Md5Hasher::hash(data).expect("Error in hash");
         let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
