@@ -1,6 +1,5 @@
 use std::cmp::min;
 use std::fmt::Display;
-use std::num::Wrapping;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -258,15 +257,13 @@ macro_rules! Md5Op {
     ($self:ident, $block:ident, $aux_fun:ident, $a:ident, $b:ident, $c:ident, $d:ident, $k:expr, $s:expr, $i:expr) => {
         HashComputeState {
             $a: {
-                (Wrapping(
-                    (Wrapping($self.$a)
-                        + Wrapping($aux_fun($self.$b, $self.$c, $self.$d))
-                        + Wrapping($block[$k])
-                        + Wrapping(SINE_TABLE[$i]))
-                    .0
-                    .rotate_left($s),
-                ) + Wrapping($self.$b))
-                .0
+                $self
+                    .$a
+                    .wrapping_add($aux_fun($self.$b, $self.$c, $self.$d))
+                    .wrapping_add($block[$k])
+                    .wrapping_add(SINE_TABLE[$i])
+                    .rotate_left($s)
+                    .wrapping_add($self.$b)
             },
             $b: $self.$b,
             $c: $self.$c,
@@ -371,10 +368,10 @@ impl HashComputeState {
             trace!("State at step {:0>2}: {}", step, result);
         }
         Ok(HashComputeState {
-            a: (Wrapping(self.a) + Wrapping(result.a)).0,
-            b: (Wrapping(self.b) + Wrapping(result.b)).0,
-            c: (Wrapping(self.c) + Wrapping(result.c)).0,
-            d: (Wrapping(self.d) + Wrapping(result.d)).0,
+            a: self.a.wrapping_add(result.a),
+            b: self.b.wrapping_add(result.b),
+            c: self.c.wrapping_add(result.c),
+            d: self.d.wrapping_add(result.d),
         })
     }
 }
