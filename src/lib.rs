@@ -1,5 +1,6 @@
-use std::cmp::min;
 use std::fmt::Display;
+use std::io::Cursor;
+use std::io::Read;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -97,47 +98,14 @@ enum PaddingState {
 
 type Block = [u32; BLOCK_SIZE_WORDS];
 
-trait Md5Input {
-    fn read(&mut self, buf: &mut Chunk) -> Result<usize>;
-}
-
-struct Md5InputDirect {
-    position: usize,
-    contents: Vec<u8>,
-}
-
-impl Md5InputDirect {
-    pub fn new(contents: Vec<u8>) -> Self {
-        Md5InputDirect {
-            position: 0,
-            contents,
-        }
-    }
-}
-
-impl Md5Input for Md5InputDirect {
-    fn read(&mut self, buf: &mut Chunk) -> Result<usize> {
-        if self.position == self.contents.len() {
-            return Ok(0);
-        }
-        let limit = min(self.position + buf.0.len(), self.contents.len());
-        for (cursor, byte) in self.contents[self.position..limit].iter().enumerate() {
-            buf.0[cursor] = *byte;
-        }
-        let copied = limit - self.position;
-        self.position = limit;
-        Ok(copied)
-    }
-}
-
-struct ChunkProvider<T: Md5Input> {
-    input: T,
+struct ChunkProvider<'a> {
+    input: &'a mut dyn Read,
     padding_state: PaddingState,
     size: u64,
 }
 
-impl<T: Md5Input> ChunkProvider<T> {
-    pub fn new(input: T) -> Self {
+impl<'a> ChunkProvider<'a> {
+    pub fn new(input: &'a mut dyn Read) -> Self {
         ChunkProvider {
             input,
             padding_state: PaddingState::InitialBit,
@@ -164,7 +132,7 @@ impl<T: Md5Input> ChunkProvider<T> {
     }
 
     fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>> {
-        match self.input.read(buffer) {
+        match self.input.read(&mut buffer.0) {
             Err(error) => Err(anyhow!(error)),
             Ok(bytes_read) => {
                 if bytes_read == 0 && self.padding_state == PaddingState::Done {
@@ -390,8 +358,8 @@ impl Md5Hasher {
     }
 
     pub fn hash(data: Vec<u8>) -> Result<[u8; 16]> {
-        let input = Md5InputDirect::new(data);
-        let mut chunk_provider = ChunkProvider::new(input);
+        let mut cursor = Cursor::new(data);
+        let mut chunk_provider = ChunkProvider::new(&mut cursor);
         let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
         while (chunk_provider.read(&mut buffer)?).is_some() {
@@ -455,71 +423,6 @@ mod test {
             TerminalMode::Stderr,
             ColorChoice::Auto,
         );
-    }
-
-    #[rstest]
-    fn test_md5_input_direct_32_bytes() {
-        let mut initial_value: Vec<u8> = (1..33).collect::<Vec<u8>>();
-        let mut instance = Md5InputDirect::new(initial_value.clone());
-        let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
-        initial_value.extend([0; 32].iter());
-        let expected: [u8; CHUNK_SIZE_BYTES] = initial_value.try_into().expect("Wrong Vec size");
-        let readed = instance.read(&mut buffer).unwrap();
-
-        assert_eq!(readed, 32);
-        assert_eq!(buffer, Chunk(expected));
-
-        let readed = instance.read(&mut buffer).unwrap();
-        assert_eq!(readed, 0);
-    }
-
-    #[rstest]
-    fn test_md5_input_direct_72_bytes() {
-        let initial_value: Vec<u8> = (1..73).collect::<Vec<u8>>();
-        let mut instance = Md5InputDirect::new(initial_value.clone());
-        let buffer = &mut Chunk([0; CHUNK_SIZE_BYTES]);
-        let expected = initial_value[0..CHUNK_SIZE_BYTES]
-            .iter()
-            .map(|&x| x)
-            .collect::<Vec<u8>>();
-        let readed = instance.read(buffer).unwrap();
-
-        assert_eq!(readed, CHUNK_SIZE_BYTES);
-        assert_eq!(buffer.0, expected.as_slice());
-
-        let mut expected = initial_value[CHUNK_SIZE_BYTES..]
-            .iter()
-            .map(|&x| x)
-            .collect::<Vec<u8>>();
-        expected.extend([0; CHUNK_SIZE_BYTES - 8].iter());
-        let readed = instance.read(buffer).unwrap();
-        assert_eq!(readed, 8);
-        assert_eq!(buffer.0[..8], expected.as_slice()[..8]);
-
-        let readed = instance.read(buffer).unwrap();
-        assert_eq!(readed, 0);
-    }
-
-    #[rstest]
-    fn test_md5_input_leftover() {
-        let initial_value: Vec<u8> = (0..8).collect::<Vec<u8>>();
-        let mut instance = Md5InputDirect::new(initial_value);
-        let buffer = &mut Chunk([0xff; CHUNK_SIZE_BYTES]);
-        #[rustfmt::skip]
-        let expected = vec![
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        ];
-        let readed = instance.read(buffer).unwrap();
-
-        assert_eq!(readed, 8);
-        assert_eq!(buffer.0, expected.as_slice());
     }
 
     #[rstest]
@@ -677,10 +580,10 @@ mod test {
         ]
     )]
     fn test_padding(#[case] contents: Vec<u8>, #[case] expected: Vec<Chunk>) {
-        let input = Md5InputDirect::new(contents);
         let mut result: Vec<Chunk> = vec![];
         let mut buffer = Chunk([0; CHUNK_SIZE_BYTES]);
-        let mut chunk_provider = ChunkProvider::new(input);
+        let mut cursor = Cursor::new(contents);
+        let mut chunk_provider = ChunkProvider::new(&mut cursor);
         while let Some(_) = chunk_provider.read(&mut buffer).unwrap() {
             result.push(buffer.clone());
         }
