@@ -374,23 +374,15 @@ impl Md5Hasher {
 
     pub fn compute(&self) -> Hash {
         let mut buffer: [u8; 16] = [0; 16];
-        buffer[0..4].copy_from_slice(&self.state_var_to_u8(&self.state.a));
-        buffer[4..8].copy_from_slice(&self.state_var_to_u8(&self.state.b));
-        buffer[8..12].copy_from_slice(&self.state_var_to_u8(&self.state.c));
-        buffer[12..16].copy_from_slice(&self.state_var_to_u8(&self.state.d));
+        buffer[0..4].copy_from_slice(&u32_to_u8(&self.state.a));
+        buffer[4..8].copy_from_slice(&u32_to_u8(&self.state.b));
+        buffer[8..12].copy_from_slice(&u32_to_u8(&self.state.c));
+        buffer[12..16].copy_from_slice(&u32_to_u8(&self.state.d));
         Hash::from(buffer)
     }
 
     fn add_raw_chunk(&mut self, chunk: Chunk) {
         self.state = self.state.process_chunk(&chunk);
-    }
-
-    fn state_var_to_u8(&self, state_var: &u32) -> [u8; 4] {
-        let mut buffer: [u8; 4] = [0; 4];
-        for (index, item) in buffer.iter_mut().enumerate().take(4) {
-            *item = extract_u8(&index, &(*state_var as u64));
-        }
-        buffer
     }
 }
 
@@ -416,6 +408,14 @@ fn u8_to_u32(source: &[u8; 4]) -> u32 {
         result |= (*item as u32) << (index * 8);
     }
     result
+}
+
+fn u32_to_u8(source: &u32) -> [u8; 4] {
+    let mut buffer: [u8; 4] = [0; 4];
+    for (index, item) in buffer.iter_mut().enumerate().take(4) {
+        *item = extract_u8(&index, &(*source as u64));
+    }
+    buffer
 }
 
 #[cfg(test)]
