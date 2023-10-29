@@ -3,7 +3,6 @@ use std::io::Cursor;
 use std::io::Read;
 
 use anyhow::anyhow;
-use anyhow::Context;
 use anyhow::Result;
 use log::debug;
 use log::trace;
@@ -110,7 +109,7 @@ impl<'a> ChunkProvider<'a> {
 
     fn write_length(&self, chunk: &mut Chunk) -> Result<()> {
         let mut length: [u8; 8] = [0; 8];
-        u64_to_u8(&(self.size & u64::MAX), &mut length)?;
+        u64_to_u8(&(self.size & u64::MAX), &mut length);
         for x in 0..8 {
             let chunk_position = ZERO_PADDING_MAX_SIZE_BYTES + x + 1;
             let length_position = x;
@@ -390,13 +389,13 @@ impl Md5Hasher {
     }
 }
 
-fn u64_to_u8(source: &u64, buffer: &mut [u8; 8]) -> Result<()> {
+fn u64_to_u8(source: &u64, buffer: &mut [u8; 8]) {
     for (index, item) in buffer.iter_mut().enumerate().take(8) {
-        *item = u8::try_from((0xff << (index * 8) & source) >> (index * 8)).with_context(|| {
-            anyhow!("Error transforming byte {:?} in source {:?}", index, source)
-        })?;
+        *item = match u8::try_from((0xff << (index * 8) & source) >> (index * 8)) {
+            Ok(value) => value,
+            Err(_) => panic!("Error transforming byte {:?} in source {:?}", index, source),
+        };
     }
-    Ok(())
 }
 
 fn u8_to_u32(source: &[u8; 4]) -> Result<u32> {
@@ -430,7 +429,7 @@ mod test {
     #[case(0x0123456789abcdef, [0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01])]
     fn test_u64_to_u8(#[case] input: u64, #[case] expected: [u8; 8]) {
         let mut octets: [u8; 8] = [0; 8];
-        u64_to_u8(&input, &mut octets).expect("Error decoding in octets");
+        u64_to_u8(&input, &mut octets);
         assert_eq!(&octets, &expected);
     }
 
