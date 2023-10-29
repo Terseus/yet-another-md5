@@ -43,7 +43,7 @@ impl From<[u8; 16]> for Hash {
 }
 
 impl Display for Hash {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for value in self.value.iter() {
             write!(formatter, "{:02x}", value)?
         }
