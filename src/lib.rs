@@ -319,22 +319,29 @@ impl HashComputeState {
         }
     }
 
-    pub fn process_chunk(self, chunk: &Chunk) -> Result<Self> {
+    pub fn process_chunk(self, chunk: &Chunk) -> Self {
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for (index, item) in block.iter_mut().enumerate() {
-            *item = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?);
+            let unpacked: [u8; 4] = match chunk.0[(index * 4)..((index * 4) + 4)].try_into() {
+                Ok(value) => value,
+                Err(_) => panic!(
+                    "Error extracting word at position {:?} in chunk {:?}",
+                    index, chunk
+                ),
+            };
+            *item = u8_to_u32(&unpacked);
         }
         let mut result = self;
         for step in 1..65 {
             result = result.advance_step(&block, step);
             trace!("State at step {:0>2}: {}", step, result);
         }
-        Ok(HashComputeState {
+        HashComputeState {
             a: self.a.wrapping_add(result.a),
             b: self.b.wrapping_add(result.b),
             c: self.c.wrapping_add(result.c),
             d: self.d.wrapping_add(result.d),
-        })
+        }
     }
 }
 
@@ -357,12 +364,12 @@ impl Md5Hasher {
         let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk::empty();
         while (chunk_provider.read(&mut buffer)?).is_some() {
-            hasher.add_raw_chunk(buffer)?;
+            hasher.add_raw_chunk(buffer);
         }
         hasher.compute()
     }
 
-    pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) -> Result<()> {
+    pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) {
         self.add_raw_chunk(Chunk::from(chunk))
     }
 
@@ -375,9 +382,8 @@ impl Md5Hasher {
         Ok(buffer)
     }
 
-    fn add_raw_chunk(&mut self, chunk: Chunk) -> Result<()> {
-        self.state = self.state.process_chunk(&chunk)?;
-        Ok(())
+    fn add_raw_chunk(&mut self, chunk: Chunk) {
+        self.state = self.state.process_chunk(&chunk);
     }
 
     fn state_var_to_u8(&self, state_var: &u32) -> Result<[u8; 4]> {
@@ -642,9 +648,7 @@ mod test {
     )]
     fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: HashComputeState) {
         let mut instance = HashComputeState::new_initial();
-        instance = instance
-            .process_chunk(&chunk)
-            .expect("Error processing chunk");
+        instance = instance.process_chunk(&chunk);
         assert_eq!(instance, expected);
     }
 
@@ -677,7 +681,7 @@ mod test {
     )]
     fn test_compute_single_chunk(#[case] chunk: [u8; CHUNK_SIZE_BYTES], #[case] expected: &str) {
         let mut instance = Md5Hasher::new();
-        instance.add_chunk(chunk).expect("Error adding chunk");
+        instance.add_chunk(chunk);
         let digest = Hash::from(instance.compute().expect("Error in compute"));
         let result = format!("{}", digest);
         assert_eq!(result, expected);
