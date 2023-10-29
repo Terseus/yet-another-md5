@@ -322,7 +322,7 @@ impl HashComputeState {
     pub fn process_chunk(self, chunk: &Chunk) -> Result<Self> {
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for (index, item) in block.iter_mut().enumerate() {
-            *item = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?)?;
+            *item = u8_to_u32(&chunk.0[(index * 4)..((index * 4) + 4)].try_into()?);
         }
         let mut result = self;
         for step in 1..65 {
@@ -398,12 +398,12 @@ fn u64_to_u8(source: &u64, buffer: &mut [u8; 8]) {
     }
 }
 
-fn u8_to_u32(source: &[u8; 4]) -> Result<u32> {
+fn u8_to_u32(source: &[u8; 4]) -> u32 {
     let mut result = 0u32;
     for (index, item) in source.iter().enumerate().take(4) {
         result |= (*item as u32) << (index * 8);
     }
-    Ok(result)
+    result
 }
 
 #[cfg(test)]
@@ -438,7 +438,7 @@ mod test {
     #[case([0, 0, 0xff, 0xff], 0xffff0000)]
     #[case([0x67, 0x45, 0x23, 0x01], 0x01234567)]
     fn test_u8_to_u32(#[case] input: [u8; 4], #[case] expected: u32) {
-        let result = u8_to_u32(&input).expect("Error combining octets");
+        let result = u8_to_u32(&input);
         assert_eq!(result, expected);
     }
 
