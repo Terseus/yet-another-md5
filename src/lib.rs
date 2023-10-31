@@ -191,10 +191,6 @@ const fn aux_fun_i(x: u32, y: u32, z: u32) -> u32 {
     y ^ (x | !(z))
 }
 
-pub struct Md5Hasher {
-    state: HashComputeState,
-}
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct HashComputeState {
     a: u32,
@@ -344,6 +340,10 @@ impl HashComputeState {
     }
 }
 
+pub struct Md5Hasher {
+    state: HashComputeState,
+}
+
 impl Default for Md5Hasher {
     fn default() -> Self {
         Self::new()
@@ -357,15 +357,26 @@ impl Md5Hasher {
         }
     }
 
-    pub fn hash(data: Vec<u8>) -> Result<Hash> {
-        let mut cursor = Cursor::new(data);
-        let mut chunk_provider = ChunkProvider::new(&mut cursor);
+    pub fn hash(input: &mut dyn Read) -> Result<Hash> {
+        let mut chunk_provider = ChunkProvider::new(input);
         let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk::empty();
         while (chunk_provider.read(&mut buffer)?).is_some() {
             hasher.add_raw_chunk(buffer);
         }
         Ok(hasher.compute())
+    }
+
+    pub fn hash_vec(data: &Vec<u8>) -> Hash {
+        Self::unsafe_hash(&mut Cursor::new(data))
+    }
+
+    pub fn hash_slice(data: &[u8]) -> Hash {
+        Self::unsafe_hash(&mut Cursor::new(data))
+    }
+
+    pub fn hash_str(data: &str) -> Hash {
+        Self::unsafe_hash(&mut Cursor::new(data.as_bytes()))
     }
 
     pub fn add_chunk(&mut self, chunk: [u8; CHUNK_SIZE_BYTES]) {
@@ -379,6 +390,13 @@ impl Md5Hasher {
         buffer[8..12].copy_from_slice(&u32_to_u8(&self.state.c));
         buffer[12..16].copy_from_slice(&u32_to_u8(&self.state.d));
         Hash::from(buffer)
+    }
+
+    fn unsafe_hash(input: &mut dyn Read) -> Hash {
+        match Self::hash(input) {
+            Ok(value) => value,
+            Err(_) => panic!("Error computing hash from static input"),
+        }
     }
 
     fn add_raw_chunk(&mut self, chunk: Chunk) {
@@ -424,6 +442,10 @@ mod test {
     use log::LevelFilter;
     use rstest::*;
     use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
+    use std::io::Seek;
+    use std::io::SeekFrom;
+    use std::io::Write;
+    use tempfile::tempfile;
 
     #[allow(unused)]
     fn setup_logger() {
@@ -713,10 +735,35 @@ mod test {
         "1234567890123456789012345678901234567890123456789012345",
         "c9ccf168914a1bcfc3229f1948e67da0"
     )]
-    fn test_hash(#[case] data: &str, #[case] expected: &str) {
-        let data = Vec::from(data.as_bytes());
-        let digest = Md5Hasher::hash(data).expect("Error in hash");
+    fn test_hash_str(#[case] data: &str, #[case] expected: &str) {
+        let digest = Md5Hasher::hash_str(&data);
         let result = format!("{}", digest);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_hash_input() -> Result<()> {
+        let mut file = tempfile()?;
+        write!(file, "abc")?;
+        file.seek(SeekFrom::Start(0))?;
+        let digest = Md5Hasher::hash(&mut file)?;
+        let result = format!("{}", digest);
+        assert_eq!(result, "900150983cd24fb0d6963f7d28e17f72");
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_hash_slice() {
+        let digest = Md5Hasher::hash_slice(&"abc".as_bytes());
+        let result = format!("{}", digest);
+        assert_eq!(result, "900150983cd24fb0d6963f7d28e17f72");
+    }
+
+    #[rstest]
+    fn test_hash_vec() {
+        let data = Vec::from("abc".as_bytes());
+        let digest = Md5Hasher::hash_vec(&data);
+        let result = format!("{}", digest);
+        assert_eq!(result, "900150983cd24fb0d6963f7d28e17f72");
     }
 }
