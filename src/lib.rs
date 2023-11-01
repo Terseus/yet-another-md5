@@ -36,7 +36,7 @@ impl Md5Hasher {
         let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk::empty();
         while (chunk_provider.read(&mut buffer)?).is_some() {
-            hasher.add_raw_chunk(buffer);
+            hasher.add_chunk_direct(buffer);
         }
         Ok(hasher.compute())
     }
@@ -54,7 +54,7 @@ impl Md5Hasher {
     }
 
     pub fn add_chunk(&mut self, chunk: RawChunk) {
-        self.add_raw_chunk(Chunk::from(chunk))
+        self.add_chunk_direct(Chunk::from(chunk))
     }
 
     pub fn compute(self) -> Hash {
@@ -69,7 +69,7 @@ impl Md5Hasher {
         }
     }
 
-    fn add_raw_chunk(&mut self, chunk: Chunk) {
+    fn add_chunk_direct(&mut self, chunk: Chunk) {
         self.state = self.state.process_chunk(&chunk);
     }
 }
