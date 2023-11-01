@@ -59,8 +59,7 @@ impl Md5Hasher {
     }
 
     pub fn compute(self) -> Hash {
-        let buffer = self.state.to_raw();
-        Hash::from(buffer)
+        Hash::from(self.state.to_raw())
     }
 
     fn unsafe_hash(input: &mut dyn Read) -> Hash {
