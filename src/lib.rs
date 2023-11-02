@@ -3,15 +3,16 @@ mod chunk_provider;
 mod conversions;
 mod hash;
 mod hash_compute_state;
+mod md5_error;
 
 pub use crate::hash::Hash;
+pub use crate::md5_error::Md5Error;
 
 use crate::chunk::Chunk;
 use crate::chunk::RawChunk;
 use crate::chunk_provider::ChunkProvider;
 use crate::hash_compute_state::HashComputeState;
 
-use anyhow::Result;
 use std::io::Cursor;
 use std::io::Read;
 
@@ -32,7 +33,7 @@ impl Md5Hasher {
         }
     }
 
-    pub fn hash(input: &mut dyn Read) -> Result<Hash> {
+    pub fn hash(input: &mut dyn Read) -> Result<Hash, Md5Error> {
         let mut chunk_provider = ChunkProvider::new(input);
         let mut hasher = Md5Hasher::new();
         let mut buffer = Chunk::empty();

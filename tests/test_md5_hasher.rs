@@ -1,12 +1,21 @@
-use anyhow::Result;
+use libmd5::Md5Error;
 use libmd5::Md5Hasher;
 use log::LevelFilter;
 use rstest::rstest;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
+use std::io;
 use std::io::Seek;
-use std::io::SeekFrom;
 use std::io::Write;
 use tempfile::tempfile;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+enum TestError {
+    #[error("Md5Error: {0}")]
+    Md5Error(#[from] Md5Error),
+    #[error("I/O Error: {0}")]
+    IOError(#[from] io::Error),
+}
 
 #[allow(unused)]
 fn setup_logger() {
@@ -80,10 +89,10 @@ fn test_hash_str(#[case] data: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-fn test_hash_input() -> Result<()> {
+fn test_hash_input() -> Result<(), TestError> {
     let mut file = tempfile()?;
     write!(file, "abc")?;
-    file.seek(SeekFrom::Start(0))?;
+    file.seek(io::SeekFrom::Start(0))?;
     let digest = Md5Hasher::hash(&mut file)?;
     let result = format!("{}", digest);
     assert_eq!(result, "900150983cd24fb0d6963f7d28e17f72");

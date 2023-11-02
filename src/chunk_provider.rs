@@ -1,8 +1,7 @@
 use crate::chunk::Chunk;
 use crate::chunk::CHUNK_SIZE_BYTES;
 use crate::conversions::u64_to_u8;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::md5_error::Md5Error;
 use log::debug;
 use log::trace;
 use std::io::Read;
@@ -52,54 +51,60 @@ impl<'a> ChunkProvider<'a> {
         }
     }
 
-    pub fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>> {
-        match self.input.read(&mut buffer.0) {
-            Err(error) => Err(anyhow!(error)),
-            Ok(bytes_read) => {
-                if bytes_read == 0 && self.padding_state == PaddingState::Done {
+    pub fn read(&mut self, buffer: &mut Chunk) -> Result<Option<()>, Md5Error> {
+        let bytes_read = match self.input.read(&mut buffer.0) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(Md5Error::ReadError(error));
+            }
+        };
+        debug!("bytes_read: {}", bytes_read);
+        if bytes_read == 0 && self.padding_state == PaddingState::Done {
+            return Ok(None);
+        }
+        // Length is in bits
+        self.size += u64::try_from(bytes_read * 8).unwrap_or_else(|error| {
+            panic!(
+                "Error reading bytes_read ({:?}) as u64: {:?}",
+                bytes_read, error
+            )
+        });
+        debug!("size: {:?}", self.size);
+        trace!("buffer: {}", buffer);
+        if bytes_read == 0 {
+            debug!("empty chunk readed");
+            debug!("current padding state: {:?}", self.padding_state);
+            buffer.0.fill(0);
+            match &self.padding_state {
+                PaddingState::InitialBit => {
+                    buffer.0[0] = INITIAL_BIT;
+                    self.write_length(buffer);
+                    self.padding_state = PaddingState::Done;
+                }
+                PaddingState::Length => {
+                    self.write_length(buffer);
+                    self.padding_state = PaddingState::Done;
+                }
+                PaddingState::Done => {
                     return Ok(None);
                 }
-                // Length is in bits
-                self.size += u64::try_from(bytes_read * 8)?;
-                debug!("bytes_read: {}", bytes_read);
-                debug!("size: {:?}", self.size);
-                trace!("buffer: {}", buffer);
-                if bytes_read == 0 {
-                    debug!("empty chunk readed");
-                    debug!("current padding state: {:?}", self.padding_state);
-                    buffer.0.fill(0);
-                    match &self.padding_state {
-                        PaddingState::InitialBit => {
-                            buffer.0[0] = INITIAL_BIT;
-                            self.write_length(buffer);
-                            self.padding_state = PaddingState::Done;
-                        }
-                        PaddingState::Length => {
-                            self.write_length(buffer);
-                            self.padding_state = PaddingState::Done;
-                        }
-                        PaddingState::Done => {
-                            return Ok(None);
-                        }
-                    }
-                    trace!("chunk with padding: {}", buffer);
-                    return Ok(Some(()));
-                }
-                if bytes_read < buffer.len() {
-                    debug!("last chunk readed");
-                    buffer.0[bytes_read] = INITIAL_BIT;
-                    buffer.0[bytes_read + 1..].fill(0);
-                    self.padding_state = PaddingState::Length;
-                    if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES {
-                        debug!("chunk can hold padding");
-                        self.write_length(buffer);
-                        trace!("buffer with padding: {}", buffer);
-                        self.padding_state = PaddingState::Done;
-                    }
-                }
-                Ok(Some(()))
+            }
+            trace!("chunk with padding: {}", buffer);
+            return Ok(Some(()));
+        }
+        if bytes_read < buffer.len() {
+            debug!("last chunk readed");
+            buffer.0[bytes_read] = INITIAL_BIT;
+            buffer.0[bytes_read + 1..].fill(0);
+            self.padding_state = PaddingState::Length;
+            if bytes_read <= ZERO_PADDING_MAX_SIZE_BYTES {
+                debug!("chunk can hold padding");
+                self.write_length(buffer);
+                trace!("buffer with padding: {}", buffer);
+                self.padding_state = PaddingState::Done;
             }
         }
+        Ok(Some(()))
     }
 }
 
