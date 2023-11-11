@@ -7,15 +7,6 @@ use std::io;
 use std::io::Seek;
 use std::io::Write;
 use tempfile::tempfile;
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-enum TestError {
-    #[error("Md5Error: {0}")]
-    Md5Error(#[from] Md5Error),
-    #[error("I/O Error: {0}")]
-    IOError(#[from] io::Error),
-}
 
 #[allow(unused)]
 fn setup_logger() {
@@ -89,7 +80,7 @@ fn test_hash_str(#[case] data: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-fn test_hash_input() -> Result<(), TestError> {
+fn test_hash_input() -> Result<(), Md5Error> {
     let mut file = tempfile()?;
     write!(file, "abc")?;
     file.seek(io::SeekFrom::Start(0))?;
