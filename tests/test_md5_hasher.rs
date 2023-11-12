@@ -1,5 +1,3 @@
-use libmd5::Md5Error;
-use libmd5::Md5Hasher;
 use log::LevelFilter;
 use rstest::rstest;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
@@ -7,6 +5,8 @@ use std::io;
 use std::io::Seek;
 use std::io::Write;
 use tempfile::tempfile;
+use ya_md5::Md5Error;
+use ya_md5::Md5Hasher;
 
 #[allow(unused)]
 fn setup_logger() {

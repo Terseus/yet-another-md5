@@ -1,15 +1,15 @@
 #![warn(missing_docs)]
 
-//! An implementation of the [MD5] hash algorithm capable to hash data from any struct that
-//! implements [std::io::Read].
+//! An implementation of the [MD5] hash algorithm capable to hash data readed from a
+//! [std::io::Read] implementation.
 //!
 //! ## Example
 //! ```rust
 //! use std::fs::File;
 //! use std::io::prelude::*;
-//! use libmd5::Md5Hasher;
-//! use libmd5::Hash;
-//! use libmd5::Md5Error;
+//! use ya_md5::Md5Hasher;
+//! use ya_md5::Hash;
+//! use ya_md5::Md5Error;
 //!
 //! fn main() -> Result<(), Md5Error> {
 //!     std::fs::write("foo.txt", b"hello world")?;
@@ -78,7 +78,7 @@ impl Md5Hasher {
     ///
     /// ```
     /// use std::io::Cursor;
-    /// use libmd5::Md5Hasher;
+    /// use ya_md5::Md5Hasher;
     ///
     /// let hash = Md5Hasher::hash(&mut Cursor::new("hello world".as_bytes()))
     ///     .expect("Unexpected error reading from a cursor");
@@ -100,7 +100,7 @@ impl Md5Hasher {
     /// # Examples
     ///
     /// ```
-    /// use libmd5::Md5Hasher;
+    /// use ya_md5::Md5Hasher;
     ///
     /// let hash = Md5Hasher::hash_vec(&Vec::from("hello world".as_bytes()));
     /// let result = format!("{}", hash);
@@ -114,7 +114,7 @@ impl Md5Hasher {
     ///
     /// # Examples
     /// ```
-    /// use libmd5::Md5Hasher;
+    /// use ya_md5::Md5Hasher;
     ///
     /// let hash = Md5Hasher::hash_slice("hello world".as_bytes());
     /// let result = format!("{}", hash);
@@ -128,7 +128,7 @@ impl Md5Hasher {
     ///
     /// # Examples
     /// ```
-    /// use libmd5::Md5Hasher;
+    /// use ya_md5::Md5Hasher;
     ///
     /// let hash = Md5Hasher::hash_str("hello world");
     /// let result = format!("{}", hash);

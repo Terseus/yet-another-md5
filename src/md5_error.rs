@@ -12,9 +12,9 @@ pub enum Md5Error {
     /// ```
     /// use std::fs::File;
     /// use std::io::prelude::*;
-    /// use libmd5::Md5Hasher;
-    /// use libmd5::Hash;
-    /// use libmd5::Md5Error;
+    /// use ya_md5::Md5Hasher;
+    /// use ya_md5::Hash;
+    /// use ya_md5::Md5Error;
     ///
     /// fn hash_file() -> Result<Hash, Md5Error> {
     ///     std::fs::write("foo.txt", b"hello world")?;
