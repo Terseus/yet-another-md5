@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+/// The hash computed by the [Md5Hasher](crate::Md5Hasher).
 #[derive(Debug)]
 pub struct Hash {
     value: [u8; 16],

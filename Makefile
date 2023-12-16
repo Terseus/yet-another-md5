@@ -43,23 +43,26 @@ endif
 
 
 # Builds the project
-.PHONY: build
-build:
+build: test
 	cargo build $(BUILD_FLAGS)
 
 # Run the tests
-.PHONY: test
 test:
 	cargo test $(TEST_FLAGS) -- $(TEST_BIN_FLAGS)
 
 # Clean all artifacts
-.PHONY: clean
 clean:
 	cargo clean
 
+# Generates the doc
+doc: test
+	cargo doc --no-deps
+
 # Prints Makefile variables - for debugging
-.PHONY: debug
 debug:
 	@echo "BUILD_FLAGS=$(BUILD_FLAGS)"
 	@echo "TEST_FLAGS=$(TEST_FLAGS)"
 	@echo "TEST_BIN_FLAGS=$(TEST_BIN_FLAGS)"
+
+
+.PHONY: build test clean debug doc
