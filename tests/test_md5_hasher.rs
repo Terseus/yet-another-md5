@@ -1,3 +1,5 @@
+#![allow(clippy::items_after_test_module)]
+
 use log::LevelFilter;
 use rstest::rstest;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
@@ -74,7 +76,7 @@ fn test_compute_single_chunk(#[case] chunk: [u8; 64], #[case] expected: &str) {
     "c9ccf168914a1bcfc3229f1948e67da0"
 )]
 fn test_hash_str(#[case] data: &str, #[case] expected: &str) {
-    let digest = Md5Hasher::hash_str(&data);
+    let digest = Md5Hasher::hash_str(data);
     let result = format!("{}", digest);
     assert_eq!(result, expected);
 }
@@ -92,7 +94,7 @@ fn test_hash_input() -> Result<(), Md5Error> {
 
 #[rstest]
 fn test_hash_slice() {
-    let digest = Md5Hasher::hash_slice(&"abc".as_bytes());
+    let digest = Md5Hasher::hash_slice("abc".as_bytes());
     let result = format!("{}", digest);
     assert_eq!(result, "900150983cd24fb0d6963f7d28e17f72");
 }

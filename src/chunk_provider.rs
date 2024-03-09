@@ -254,8 +254,8 @@ mod test {
         let mut buffer = Chunk::empty();
         let mut cursor = Cursor::new(contents);
         let mut chunk_provider = ChunkProvider::new(&mut cursor);
-        while let Some(_) = chunk_provider.read(&mut buffer).unwrap() {
-            result.push(buffer.clone());
+        while chunk_provider.read(&mut buffer).unwrap().is_some() {
+            result.push(buffer);
         }
         assert_eq!(result, expected);
     }
