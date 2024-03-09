@@ -79,9 +79,8 @@ macro_rules! Md5Op {
     };
 }
 
-// TODO: Try a struct to be used as mutable, benchmark it and see the difference.
-impl HashComputeState {
-    pub fn new_initial() -> Self {
+impl Default for HashComputeState {
+    fn default() -> Self {
         HashComputeState {
             a: INITIAL_WORD_A,
             b: INITIAL_WORD_B,
@@ -89,7 +88,9 @@ impl HashComputeState {
             d: INITIAL_WORD_D,
         }
     }
+}
 
+impl HashComputeState {
     pub fn advance_step(self, block: &Block, step: u8) -> Self {
         match step {
             // Round 1
@@ -235,7 +236,7 @@ mod test {
             0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000,
         ];
-        let mut instance = HashComputeState::new_initial();
+        let mut instance = HashComputeState::default();
         for x in 1..(steps + 1) {
             instance = instance.advance_step(&block, x);
         }
@@ -257,7 +258,7 @@ mod test {
         HashComputeState{a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
     fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: HashComputeState) {
-        let mut instance = HashComputeState::new_initial();
+        let mut instance = HashComputeState::default();
         instance = instance.process_chunk(&chunk);
         assert_eq!(instance, expected);
     }

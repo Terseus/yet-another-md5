@@ -64,7 +64,7 @@ impl Md5Hasher {
     /// Creates an instance with the initial internal state.
     pub fn new() -> Self {
         Md5Hasher {
-            state: HashComputeState::new_initial(),
+            state: HashComputeState::default(),
         }
     }
 
