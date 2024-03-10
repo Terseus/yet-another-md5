@@ -166,6 +166,7 @@ impl HashComputeState {
     }
 
     pub fn process_chunk(self, chunk: &Chunk) -> Self {
+        log::debug!("Chunk: {:?}", chunk);
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for (index, item) in block.iter_mut().enumerate() {
             let unpacked: [u8; 4] = match chunk.0[(index * 4)..((index * 4) + 4)].try_into() {
@@ -204,6 +205,11 @@ impl HashComputeState {
 mod test {
     use super::*;
     use rstest::rstest;
+
+    #[ctor::ctor]
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
 
     // Example values taken from https://rosettacode.org/wiki/MD5/Implementation_Debug
     #[rstest]

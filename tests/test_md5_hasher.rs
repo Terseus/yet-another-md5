@@ -1,8 +1,6 @@
 #![allow(clippy::items_after_test_module)]
 
-use log::LevelFilter;
 use rstest::rstest;
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::io;
 use std::io::Seek;
 use std::io::Write;
@@ -10,14 +8,9 @@ use tempfile::tempfile;
 use ya_md5::Md5Error;
 use ya_md5::Md5Hasher;
 
-#[allow(unused)]
-fn setup_logger() {
-    TermLogger::init(
-        LevelFilter::Debug,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    );
+#[ctor::ctor]
+fn init() {
+    let _ = env_logger::builder().is_test(true).try_init();
 }
 
 #[rstest]

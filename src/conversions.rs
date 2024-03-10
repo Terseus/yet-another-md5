@@ -35,6 +35,11 @@ mod test {
     use super::*;
     use rstest::rstest;
 
+    #[ctor::ctor]
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[rstest]
     #[case(0xffffffffffffffff, [0xff; 8])]
     #[case(0xffffffff00000000, [0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])]

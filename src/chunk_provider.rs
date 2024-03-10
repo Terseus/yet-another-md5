@@ -114,6 +114,11 @@ mod test {
     use rstest::rstest;
     use std::io::Cursor;
 
+    #[ctor::ctor]
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     // Inputs and outputs taken from https://rosettacode.org/wiki/MD5/Implementation_Debug
     #[rstest]
     #[case(
