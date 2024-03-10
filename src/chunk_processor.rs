@@ -54,13 +54,13 @@ impl ChunkProcessor {
                 Ok(value) => value,
                 Err(err) => panic!("ChunkProcessor: Error draining buffer to chunk: {:?}", err),
             };
-            self.state.process_chunk(&chunk);
+            self.state = self.state.process_chunk(&chunk);
         }
         let chunks_iter = data.chunks_exact(CHUNK_SIZE_BYTES);
         self.buffer.extend_from_slice(chunks_iter.remainder());
         chunks_iter.for_each(|raw_chunk| {
             let chunk = Chunk::try_from(raw_chunk).unwrap();
-            self.state.process_chunk(&chunk);
+            self.state = self.state.process_chunk(&chunk);
             self.size += CHUNK_LENGTH;
         });
     }
@@ -73,7 +73,7 @@ impl ChunkProcessor {
         let mut chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
         chunk.0[buffer_length] = INITIAL_BIT;
         write_length(&mut chunk, size);
-        self.state.process_chunk(&chunk);
+        self.state = self.state.process_chunk(&chunk);
         Hash::from(self.state.to_raw())
     }
 }
@@ -103,7 +103,7 @@ mod test {
         "1234567890123456789012345678901234567890123456789012345",
         "c9ccf168914a1bcfc3229f1948e67da0"
     )]
-    fn test_hash_str(#[case] data: &str, #[case] expected: &str) {
+    fn test_hash_new(#[case] data: &str, #[case] expected: &str) {
         let digest = {
             let mut processor = ChunkProcessor::default();
             processor.update(data.as_bytes());
