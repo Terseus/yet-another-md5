@@ -68,8 +68,15 @@ impl ChunkProcessor {
     pub fn finalize(mut self) -> Hash {
         let buffer_length = self.buffer.len();
         let size = self.size + (buffer_length as u64 * 8);
+        self.buffer.push(INITIAL_BIT);
         self.buffer
-            .append(&mut vec![0_u8; CHUNK_SIZE_BYTES - buffer_length]);
+            .append(&mut vec![0_u8; CHUNK_SIZE_BYTES - buffer_length - 1]);
+        if buffer_length > ZERO_PADDING_MAX_SIZE_BYTES {
+            let chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
+            self.state = self.state.process_chunk(&chunk);
+            self.buffer.clear();
+            self.buffer.append(&mut vec![0_u8; CHUNK_SIZE_BYTES]);
+        }
         let mut chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
         chunk.0[buffer_length] = INITIAL_BIT;
         write_length(&mut chunk, size);
