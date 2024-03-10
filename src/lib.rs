@@ -27,6 +27,7 @@
 //! [MD5]: https://en.wikipedia.org/wiki/MD5
 
 mod chunk;
+mod chunk_processor;
 mod chunk_provider;
 mod conversions;
 mod hash;
