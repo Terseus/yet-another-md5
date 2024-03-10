@@ -251,7 +251,7 @@ mod test {
     )]
     fn test_padding(#[case] contents: Vec<u8>, #[case] expected: Vec<Chunk>) {
         let mut result: Vec<Chunk> = vec![];
-        let mut buffer = Chunk::empty();
+        let mut buffer = Chunk::default();
         let mut cursor = Cursor::new(contents);
         let mut chunk_provider = ChunkProvider::new(&mut cursor);
         while chunk_provider.read(&mut buffer).unwrap().is_some() {

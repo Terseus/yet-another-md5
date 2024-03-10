@@ -88,7 +88,7 @@ impl Md5Hasher {
     pub fn hash(input: &mut dyn Read) -> Result<Hash, Md5Error> {
         let mut chunk_provider = ChunkProvider::new(input);
         let mut hasher = Md5Hasher::new();
-        let mut buffer = Chunk::empty();
+        let mut buffer = Chunk::default();
         while (chunk_provider.read(&mut buffer)?).is_some() {
             hasher.add_chunk_direct(buffer);
         }
