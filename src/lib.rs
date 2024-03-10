@@ -28,18 +28,19 @@
 
 mod chunk;
 mod chunk_processor;
-mod chunk_provider;
 mod conversions;
 mod hash;
 mod hash_compute_state;
 mod md5_error;
+
+use chunk::CHUNK_SIZE_BYTES;
 
 pub use crate::hash::Hash;
 pub use crate::md5_error::Md5Error;
 
 use crate::chunk::Chunk;
 use crate::chunk::RawChunk;
-use crate::chunk_provider::ChunkProvider;
+use crate::chunk_processor::ChunkProcessor;
 use crate::hash_compute_state::HashComputeState;
 
 use std::io::Cursor;
@@ -87,13 +88,16 @@ impl Md5Hasher {
     /// assert_eq!(result, "5eb63bbbe01eeed093cb22bb8f5acdc3");
     /// ```
     pub fn hash(input: &mut dyn Read) -> Result<Hash, Md5Error> {
-        let mut chunk_provider = ChunkProvider::new(input);
-        let mut hasher = Md5Hasher::new();
-        let mut buffer = Chunk::default();
-        while (chunk_provider.read(&mut buffer)?).is_some() {
-            hasher.add_chunk_direct(buffer);
+        let mut processor = ChunkProcessor::default();
+        let mut buffer = [0; CHUNK_SIZE_BYTES];
+        loop {
+            let readed = input.read(&mut buffer).map_err(Md5Error::from)?;
+            if readed == 0 {
+                break;
+            }
+            processor.update(&buffer[..readed]);
         }
-        Ok(hasher.compute())
+        Ok(processor.finalize())
     }
 
     /// Computes and returns the hash of the data in the `Vec`.

@@ -55,12 +55,6 @@ impl TryFrom<&[u8]> for Chunk {
     }
 }
 
-impl Chunk {
-    pub const fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
