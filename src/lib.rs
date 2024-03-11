@@ -39,7 +39,6 @@ pub use crate::hash::Hash;
 pub use crate::md5_error::Md5Error;
 
 use crate::chunk::Chunk;
-use crate::chunk::RawChunk;
 use crate::chunk_processor::ChunkProcessor;
 use crate::hash_compute_state::HashComputeState;
 
@@ -144,8 +143,8 @@ impl Md5Hasher {
     }
 
     /// Process a single chunk and use it to compute the internal state.
-    pub fn add_chunk(&mut self, chunk: RawChunk) {
-        self.add_chunk_direct(Chunk::from(chunk))
+    pub fn add_chunk(&mut self, chunk: Chunk) {
+        self.add_chunk_direct(chunk)
     }
 
     /// Computes the hash of the internal state of the instance, consuming the instance in the

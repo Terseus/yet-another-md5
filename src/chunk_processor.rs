@@ -33,7 +33,7 @@ fn write_length(chunk: &mut Chunk, size: u64) {
     for x in 0..8 {
         let chunk_position = ZERO_PADDING_MAX_SIZE_BYTES + x + 1;
         let length_position = x;
-        chunk.0[chunk_position] = length[length_position];
+        chunk[chunk_position] = length[length_position];
     }
 }
 
@@ -78,7 +78,7 @@ impl ChunkProcessor {
             self.buffer.append(&mut vec![0_u8; CHUNK_SIZE_BYTES]);
         }
         let mut chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
-        chunk.0[buffer_length] = INITIAL_BIT;
+        chunk[buffer_length] = INITIAL_BIT;
         write_length(&mut chunk, size);
         self.state = self.state.process_chunk(&chunk);
         Hash::from(self.state.to_raw())

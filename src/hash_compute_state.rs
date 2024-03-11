@@ -169,7 +169,7 @@ impl HashComputeState {
         log::debug!("Chunk: {:?}", chunk);
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for (index, item) in block.iter_mut().enumerate() {
-            let unpacked: [u8; 4] = match chunk.0[(index * 4)..((index * 4) + 4)].try_into() {
+            let unpacked: [u8; 4] = match chunk[(index * 4)..((index * 4) + 4)].try_into() {
                 Ok(value) => value,
                 Err(_) => panic!(
                     "process_chunk: error extracting word; position={:?}, chunk={:?}",
@@ -251,7 +251,7 @@ mod test {
 
     #[rstest]
     #[case(
-        Chunk::from([
+        [
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -260,7 +260,7 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ]),
+        ],
         HashComputeState{a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
     fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: HashComputeState) {
