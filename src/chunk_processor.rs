@@ -121,4 +121,22 @@ mod test {
         let result = format!("{}", digest);
         assert_eq!(result, expected);
     }
+
+    #[rustfmt::skip]
+    #[rstest]
+    #[case("1", "c4ca4238a0b923820dcc509a6f75849b")]
+    #[case("12", "c20ad4d76fe97759aa27a0c99bff6710")]
+    #[case("12345678901234567890123456789012", "767179c7a2bff19651ce97d294c30cfb")]
+    #[case("123456789012345678901234567890123456789012345678901234567890123", "c3eb67ece68488bb394241d4f6a54244")]
+    #[case("1234567890123456789012345678901234567890123456789012345678901234", "eb6c4179c0a7c82cc2828c1e6338e165")]
+    #[case("12345678901234567890123456789012345678901234567890123456789012345", "823cc889fc7318dd33dde0654a80b70a")]
+    fn test_hash_different_lengths(#[case] data: &str, #[case] expected: &str) {
+        let digest = {
+            let mut processor = ChunkProcessor::default();
+            processor.update(data.as_bytes());
+            processor.finalize()
+        };
+        let result = format!("{}", digest);
+        assert_eq!(result, expected);
+    }
 }
