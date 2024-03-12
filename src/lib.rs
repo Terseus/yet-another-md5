@@ -11,7 +11,7 @@
 //! use ya_md5::Hash;
 //! use ya_md5::Md5Error;
 //!
-//! fn main() -> Result<(), Md5Error> {
+//! fn example() -> Result<(), Md5Error> {
 //!     std::fs::write("foo.txt", b"hello world")?;
 //!     let hash = {
 //!         let mut file = File::open("foo.txt")?;
