@@ -10,7 +10,6 @@ const ZERO_PADDING_MAX_SIZE_BYTES: usize =
     CHUNK_SIZE_BYTES - LENGTH_SIZE_BYTES - INITIAL_BIT_SIZE_BYTES;
 const CHUNK_LENGTH: u64 = CHUNK_SIZE_BYTES as u64 * 8;
 
-#[allow(dead_code)]
 pub struct ChunkProcessor {
     buffer: Vec<u8>,
     state: HashComputeState,
@@ -37,7 +36,6 @@ fn write_length(chunk: &mut Chunk, size: u64) {
     }
 }
 
-#[allow(dead_code)]
 impl ChunkProcessor {
     pub fn update(&mut self, data: impl AsRef<[u8]>) {
         let mut data = data.as_ref();
