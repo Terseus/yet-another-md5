@@ -50,8 +50,10 @@ impl ChunkProcessor {
             let (for_chunk, extra) = data.split_at(CHUNK_SIZE_BYTES - self.buffer.len());
             data = extra;
             self.buffer.extend_from_slice(for_chunk);
-            let chunk = &Chunk::try_from(self.buffer.drain(1..).as_slice()).unwrap();
+            log::debug!("Buffer length {0}: {1:?}", self.buffer.len(), self.buffer);
+            let chunk = &Chunk::try_from(self.buffer.drain(..).as_slice()).unwrap();
             self.state = self.state.process_chunk(chunk);
+            self.size += CHUNK_LENGTH;
         }
         let chunks_iter = data.chunks_exact(CHUNK_SIZE_BYTES);
         self.buffer.extend_from_slice(chunks_iter.remainder());
@@ -138,5 +140,25 @@ mod test {
         };
         let result = format!("{}", digest);
         assert_eq!(result, expected);
+    }
+
+    #[rustfmt::skip]
+    #[rstest]
+    #[case("1", "2345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("12", "345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("12345678901234567890123456789012", "345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("123456789012345678901234567890123456789012345678901234567890123", "45678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("1234567890123456789012345678901234567890123456789012345678901234", "5678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("12345678901234567890123456789012345678901234567890123456789012345", "678901234567890123456789012345678901234567890123456789012345678")]
+    #[case("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567", "8")]
+    fn test_buffer_remaining(#[case] data_1: &str, #[case] data_2: &str) {
+        let digest = {
+            let mut processor = ChunkProcessor::default();
+            processor.update(data_1.as_bytes());
+            processor.update(data_2.as_bytes());
+            processor.finalize()
+        };
+        let result = format!("{}", digest);
+        assert_eq!(result, "a9fdc2dbc13c61b68c7ebf5136f5ed26");
     }
 }
