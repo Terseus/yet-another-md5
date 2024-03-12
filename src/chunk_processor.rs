@@ -50,7 +50,11 @@ impl ChunkProcessor {
             let (for_chunk, extra) = data.split_at(CHUNK_SIZE_BYTES - self.buffer.len());
             data = extra;
             self.buffer.extend_from_slice(for_chunk);
-            log::debug!("Buffer length {0}: {1:?}", self.buffer.len(), self.buffer);
+            log::debug!(
+                "Buffer filled: length={0}, content={1:?}",
+                self.buffer.len(),
+                self.buffer
+            );
             let chunk = &Chunk::try_from(self.buffer.drain(..).as_slice()).unwrap();
             self.state = self.state.process_chunk(chunk);
             self.size += CHUNK_LENGTH;
@@ -71,11 +75,21 @@ impl ChunkProcessor {
         self.buffer
             .append(&mut vec![0_u8; CHUNK_SIZE_BYTES - buffer_length - 1]);
         if buffer_length > ZERO_PADDING_MAX_SIZE_BYTES {
+            log::debug!(
+                "Buffer cannot hold padding: length={0}, content={1:?}",
+                self.buffer.len(),
+                self.buffer
+            );
             let chunk = &Chunk::try_from(self.buffer.as_slice()).unwrap();
             self.state = self.state.process_chunk(chunk);
             self.buffer.clear();
             self.buffer.append(&mut vec![0_u8; CHUNK_SIZE_BYTES]);
         }
+        log::debug!(
+            "Buffer remaining: length={0}, content={1:?}",
+            self.buffer.len(),
+            self.buffer
+        );
         let chunk = &mut Chunk::try_from(self.buffer.as_slice()).unwrap();
         chunk[buffer_length] = INITIAL_BIT;
         write_length(chunk, size);
