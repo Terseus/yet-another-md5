@@ -50,17 +50,14 @@ impl ChunkProcessor {
             let (for_chunk, extra) = data.split_at(CHUNK_SIZE_BYTES - self.buffer.len());
             data = extra;
             self.buffer.extend_from_slice(for_chunk);
-            let chunk = match Chunk::try_from(self.buffer.drain(1..).as_slice()) {
-                Ok(value) => value,
-                Err(err) => panic!("ChunkProcessor: Error draining buffer to chunk: {:?}", err),
-            };
-            self.state = self.state.process_chunk(&chunk);
+            let chunk = &Chunk::try_from(self.buffer.drain(1..).as_slice()).unwrap();
+            self.state = self.state.process_chunk(chunk);
         }
         let chunks_iter = data.chunks_exact(CHUNK_SIZE_BYTES);
         self.buffer.extend_from_slice(chunks_iter.remainder());
         chunks_iter.for_each(|raw_chunk| {
-            let chunk = Chunk::try_from(raw_chunk).unwrap();
-            self.state = self.state.process_chunk(&chunk);
+            let chunk = &Chunk::try_from(raw_chunk).unwrap();
+            self.state = self.state.process_chunk(chunk);
             self.size += CHUNK_LENGTH;
         });
     }
@@ -72,22 +69,22 @@ impl ChunkProcessor {
         self.buffer
             .append(&mut vec![0_u8; CHUNK_SIZE_BYTES - buffer_length - 1]);
         if buffer_length > ZERO_PADDING_MAX_SIZE_BYTES {
-            let chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
-            self.state = self.state.process_chunk(&chunk);
+            let chunk = &Chunk::try_from(self.buffer.as_slice()).unwrap();
+            self.state = self.state.process_chunk(chunk);
             self.buffer.clear();
             self.buffer.append(&mut vec![0_u8; CHUNK_SIZE_BYTES]);
         }
-        let mut chunk = Chunk::try_from(self.buffer.as_slice()).unwrap();
+        let chunk = &mut Chunk::try_from(self.buffer.as_slice()).unwrap();
         chunk[buffer_length] = INITIAL_BIT;
-        write_length(&mut chunk, size);
-        self.state = self.state.process_chunk(&chunk);
+        write_length(chunk, size);
+        self.state = self.state.process_chunk(chunk);
         Hash::from(self.state.to_raw())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use super::ChunkProcessor;
     use rstest::rstest;
 
     #[ctor::ctor]
@@ -115,7 +112,7 @@ mod test {
         "1234567890123456789012345678901234567890123456789012345",
         "c9ccf168914a1bcfc3229f1948e67da0"
     )]
-    fn test_hash_new(#[case] data: &str, #[case] expected: &str) {
+    fn test_hash_rfc_examples(#[case] data: &str, #[case] expected: &str) {
         let digest = {
             let mut processor = ChunkProcessor::default();
             processor.update(data.as_bytes());
