@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Remove simplelog dependency.
+- Remove serial_test and criterion dev dependencies.
 
 ## [v1.0.0] - 2024-02-17
 
