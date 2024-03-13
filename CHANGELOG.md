@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace the old `Md5Hasher` API methods `add_chunk` and `compute` with the more widespread `update` and `finalize`.
+
+### Removed
+
+- Remove simplelog dependency.
+
+## [v1.0.0] - 2024-02-17
+
 ### Added
 
 - First public version.

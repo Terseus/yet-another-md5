@@ -79,9 +79,8 @@ macro_rules! Md5Op {
     };
 }
 
-// TODO: Try a struct to be used as mutable, benchmark it and see the difference.
-impl HashComputeState {
-    pub fn new_initial() -> Self {
+impl Default for HashComputeState {
+    fn default() -> Self {
         HashComputeState {
             a: INITIAL_WORD_A,
             b: INITIAL_WORD_B,
@@ -89,7 +88,9 @@ impl HashComputeState {
             d: INITIAL_WORD_D,
         }
     }
+}
 
+impl HashComputeState {
     pub fn advance_step(self, block: &Block, step: u8) -> Self {
         match step {
             // Round 1
@@ -165,9 +166,10 @@ impl HashComputeState {
     }
 
     pub fn process_chunk(self, chunk: &Chunk) -> Self {
+        log::debug!("Chunk: {:?}", chunk);
         let mut block: Block = [0; BLOCK_SIZE_WORDS];
         for (index, item) in block.iter_mut().enumerate() {
-            let unpacked: [u8; 4] = match chunk.0[(index * 4)..((index * 4) + 4)].try_into() {
+            let unpacked: [u8; 4] = match chunk[(index * 4)..((index * 4) + 4)].try_into() {
                 Ok(value) => value,
                 Err(_) => panic!(
                     "process_chunk: error extracting word; position={:?}, chunk={:?}",
@@ -204,6 +206,11 @@ mod test {
     use super::*;
     use rstest::rstest;
 
+    #[ctor::ctor]
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     // Example values taken from https://rosettacode.org/wiki/MD5/Implementation_Debug
     #[rstest]
     #[case(1, HashComputeState{a: 0xa5202774, b: 0xefcdab89, c: 0x98badcfe, d: 0x10325476})]
@@ -235,7 +242,7 @@ mod test {
             0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000,
         ];
-        let mut instance = HashComputeState::new_initial();
+        let mut instance = HashComputeState::default();
         for x in 1..(steps + 1) {
             instance = instance.advance_step(&block, x);
         }
@@ -244,7 +251,7 @@ mod test {
 
     #[rstest]
     #[case(
-        Chunk::from([
+        [
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -253,11 +260,11 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ]),
+        ],
         HashComputeState{a: 0xd98c1dd4, b: 0x04b2008f, c: 0x980980e9, d: 0x7e42f8ec}
     )]
     fn test_process_chunk(#[case] chunk: Chunk, #[case] expected: HashComputeState) {
-        let mut instance = HashComputeState::new_initial();
+        let mut instance = HashComputeState::default();
         instance = instance.process_chunk(&chunk);
         assert_eq!(instance, expected);
     }
