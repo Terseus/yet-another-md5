@@ -1,6 +1,6 @@
 [package]
 name = "yet-another-md5"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 license = "MIT"
 description = "A library to compute md5 hashes from Read objects"
@@ -20,8 +20,6 @@ thiserror = "1.0.50"
 
 [dev-dependencies]
 rstest = "0.12.0"
-serial_test = "0.6.0"
-criterion = "0.3"
 tempfile = "3.8.1"
 env_logger = "0.11.3"
 ctor = "0.2.7"
